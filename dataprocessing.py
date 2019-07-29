@@ -56,9 +56,11 @@ class DataProcessor():
         while True:
             pass # to be continued
     
+    """
     # there is going to be some loss of information:
     # notes played by different instruments at the same time
     # are going to be considered as only one note
+    """
 
     
 
@@ -290,7 +292,7 @@ class DataProcessor():
 
 
         ########################## DEPRECATED #####################################
-
+"""
 
     def create_processed_file(self, f_path):
         if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
@@ -415,3 +417,4 @@ class DataProcessor():
                     current_timestep += 1
                 
                 m_stream.write('midi', fp=(splitext(f_path)[0] + '-retrieved.midi'))
+"""
