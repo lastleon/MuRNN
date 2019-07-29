@@ -3,10 +3,12 @@ from os.path import isdir, isfile, join, splitext, basename, curdir
 from os import listdir
 from decimal import Decimal
 import re
+import numpy as np
+import random # may not be random enough
 
 class DataProcessor():
 
-    def __init__(self): 
+    def __init__(self, dir_path): 
         # declaration for ease of use later
         self.twelfth = Decimal("0.083333333333333333333333333333333333333") # 1 / 12
         self.lowest_piano_note = music21.note.Note("A0")
@@ -15,54 +17,101 @@ class DataProcessor():
         # build conversiondict for notes to nums, needed later
         self.notes_to_num_dict, self.num_to_notes_dict = self.make_conversion_dictionaries()
 
-    def process_files(self, dir_path):
         # check if path to directory is valid
         if isdir(dir_path):
-            # files are saved here
-            files = []
+            self.dir_path = dir_path
+        else:
+            raise Exception("Provided path is faulty...")
 
-            complete_filelist = listdir(dir_path)
+        self.process_files()
 
-            # if a file is of type mid(i), then its
-            # name is saved in 'files'
-            for file in complete_filelist:
-                f_name, f_extension = splitext(file)
 
-                if f_extension == ".midi" or f_extension == ".mid":
-                    files.append(file)
-            # track how many files are created
-            created_files_counter = 0
+    def process_files(self):
+        
+        # files are saved here (not full path, but names + extension only)
+        files = []
 
-            # iterate over all of the mid(i) files
-            for file in files.copy():
-                # if a there is no .txt file to a midi file, it will be created 
-                # (if possible)
-                if not splitext(file)[0] + ".txt" in complete_filelist:
-                    # if not possible, the filename is removed from 'files'
-                    if not self.create_processed_file_v2(join(dir_path, file)):
-                        files.remove(file)
-                    else:
-                        print("File '" + splitext(file)[0] + ".txt' was created...")
-                        created_files_counter += 1
+        complete_filelist = listdir(self.dir_path)
 
-            if len(files) == 0:
-                raise FileNotFoundError("There are no fitting files in this directory...")
-            else:
-                self.files = files
-                print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
-                print("Finished!")
+        # if a file is of type mid(i), then its
+        # name is saved in 'files'
+        for file in complete_filelist:
+            f_name, f_extension = splitext(file)
 
-    def generator(self):
+            if f_extension == ".midi" or f_extension == ".mid":
+                files.append(file)
+        # track how many files are created
+        created_files_counter = 0
+
+        # iterate over all of the mid(i) files
+        for file in files.copy():
+            # if a there is no .txt file to a midi file, it will be created 
+            # (if possible)
+            if not splitext(file)[0] + ".txt" in complete_filelist:
+                # if not possible, the filename is removed from 'files'
+                if not self.create_processed_file_v2(join(self.dir_path, file)):
+                    files.remove(file)
+                else:
+                    print("File '" + splitext(file)[0] + ".txt' was created...")
+                    created_files_counter += 1
+
+        if len(files) == 0:
+            raise FileNotFoundError("There are no fitting files in this directory...")
+        else:
+            self.files = files
+            print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
+            print("Finished!")
+
+    def train_generator(self):
         while True:
-            pass # to be continued
-    
-    """
-    # there is going to be some loss of information:
-    # notes played by different instruments at the same time
-    # are going to be considered as only one note
-    """
+            music_data = self.load_processed_file(splitext(random.choice(self.files))[0])
 
-    
+            x_train = np.zeros((1, len(music_data), 88)) # shape of training data is (batch_size, timesteps, features)
+            y_train = np.zeros((1, len(music_data), 88)) 
+            for i in range(len(x_train[0])):
+                for note in music_data[i]:
+                    # a note can be in three states:
+                    # 0.0 : not playing
+                    # 0.5 : playing, but has been playing before
+                    # 1.0 : playing and didn't play before
+                    x_train[0][i][note[0]] = 0.5 if note[1] == 0 else 1.0
+
+                    # validation data is the same as x_train, but one timestep
+                    # shifted to the left
+                    ################################################### TODO: y_train probably has to be changed
+                    if i-1 >= 0: 
+                        y_train[0][i-1][note[0]] = 0.5 if note[1] == 0 else 1.0
+
+            yield x_train, y_train
+
+
+    # META-INFO ABOUT THE STRUCTURE OF THE LOADED FILE
+    # [  
+    #   [ [note, curr_playing], [note, curr_playing] ],                      <- timestep 1
+    #   [ [note, curr_playing] ],                                            <- timestep 2
+    #   [ [note, curr_playing], [note, curr_playing], [note, curr_playing] ],<- timestep 3
+    # ]
+    def load_processed_file(self, f_name):
+        full_path = join(self.dir_path, f_name + ".txt")
+        if isfile(full_path):
+            notelist = []
+            with open(full_path, "r") as f:
+                # data is divided into timesteps
+                data = f.readlines()[0].split(" ")
+                if data[-1] == "":
+                    del data[-1]
+                for timestep in data:
+                    notes = timestep.split(",")
+                    processed_notes = []
+                    # each note in a timestep is added
+                    for note in notes:
+                        if note != "r":
+                            processed_notes.append([int(note.split("|")[0]), int(note.split("|")[1])])
+                    notelist.append(processed_notes)
+            return notelist
+        else:
+            print("File with path '" + full_path + "' could not be loaded...")
+            return None
 
     ## META-INFO ABOUT THE FILEFORMAT
     ## files will look like this:
