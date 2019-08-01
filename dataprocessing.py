@@ -62,27 +62,72 @@ class DataProcessor():
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
 
-    def train_generator(self):
+    def train_generator_no_padding(self, sequence_length=10):
+
+        #############   PRODUCED DATA:
+        #### x_train:
+        # SHAPE: (batch_size, sequence_length, features)
+        # [batch_size]      number of shifts + 1 (because of the initial state), example (with sequence_length=2):
+        #                   [C  E] D  E  A    // + 1
+        #                    C [E  D] E  A    // shift 1
+        #                    C  E [D  E] A    // shift 2
+        #                    C  E  D [E  A]   // shift 3
+        #                    -----------------//--------
+        #                                          4
+        # [sequence_length] number of timesteps in a single datapoint in a batch, example:
+        #                   [C  E] D  E  A  --> sequence_length = 2
+        #                   [C  E  D] E  A  --> sequence_length = 3
+        #                   [C  E  D  E] A  --> sequence_length = 4
+        #                   ...
+        # [features]        number of notes in a single timestep --> always 88 
+
         while True:
             music_data = self.load_processed_file(splitext(random.choice(self.files))[0])
+            #music_data = self.load_processed_file("bruh_besser")
 
-            x_train = np.zeros((1, len(music_data), 88)) # shape of training data is (batch_size, timesteps, features)
-            y_train = np.zeros((1, len(music_data), 88)) 
-            for i in range(len(x_train[0])):
-                for note in music_data[i]:
-                    # a note can be in three states:
-                    # 0.0 : not playing
-                    # 0.5 : playing, but has been playing before
-                    # 1.0 : playing and didn't play before
-                    x_train[0][i][note[0]] = 0.5 if note[1] == 0 else 1.0
+            if len(music_data) < sequence_length:
+                sequence_length = len(music_data)
 
-                    # validation data is the same as x_train, but one timestep
-                    # shifted to the left
-                    ################################################### TODO: y_train probably has to be changed
-                    if i-1 >= 0: 
-                        y_train[0][i-1][note[0]] = 0.5 if note[1] == 0 else 1.0
+            # batch_size is number of shifts of the training data array + 1
+            batch_size = len(music_data) - sequence_length + 1 
 
+            x_train = np.zeros((batch_size, sequence_length, 88)) # shape of training data is (batch_size, timesteps, features)
+            y_train = np.zeros((batch_size, 88))
+
+            for i in range(batch_size): 
+                for j in range(sequence_length):
+                    for note in music_data[i+j]:        
+                        # a note can be in three states:
+                        # 0.0 : not playing
+                        # 0.5 : playing, but has been playing before
+                        # 1.0 : playing and didn't play before
+                        x_train[i][j][note[0]] = 0.5 if note[1] == 0 else 1.0
+                if i == batch_size-1:
+                    y_train[i] = np.zeros(88)
+                else:
+                    for note in music_data[i+sequence_length]:
+                        y_train[i][note[0]] = 0.5 if note[1] == 0 else 1.0
+                
             yield x_train, y_train
+                    
+                    
+    def train_generator_with_padding(self, sequence_length):
+        pass
+
+    """
+    
+        
+    for i in range(len(x_train[0])):
+        for note in music_data[i]:
+
+            # validation data is the same as x_train, but one timestep
+            # shifted to the left
+            ################################################### TODO: y_train probably has to be changed
+            if i-1 >= 0: 
+                y_train[0][i-1][note[0]] = 0.5 if note[1] == 0 else 1.0
+
+    yield x_train, y_train
+    """
 
 
     # META-INFO ABOUT THE STRUCTURE OF THE LOADED FILE

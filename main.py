@@ -7,12 +7,13 @@ from dataprocessing import DataProcessor
 ## DATA
 
 dp = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
+SEQUENCE_LENGTH = 50
 
 ## MODEL
 
 model = Sequential()
 
-model.add(CuDNNLSTM(88, batch_input_shape=(1, None, 88), return_sequences=True))
+model.add(CuDNNLSTM(88, input_shape=(None, 88), return_sequences=True))
 model.add(Dropout(0.2))
 
 model.add(CuDNNLSTM(88))
@@ -31,7 +32,7 @@ model.compile(loss="categorical_crossentropy",
     optimizer=optimizer,
     metrics=["accuracy"])
 
-model.fit_generator(dp.train_generator(), steps_per_epoch=2, epochs=10, verbose=1)
+model.fit_generator(dp.train_generator_no_padding(SEQUENCE_LENGTH), steps_per_epoch=2, epochs=10, verbose=1)
 
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
