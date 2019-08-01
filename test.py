@@ -13,4 +13,13 @@ d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
 
 np.set_printoptions(threshold=np.inf)
 
-next(d.train_generator_no_padding(5))
+#next(d.train_generator_no_padding(5))
+
+a = np.zeros((3,3))
+a[2][2] = 1
+a[1][2] = 2
+a[0][2] = 3
+print(a)
+a = np.roll(a, -1*3*2)
+print(a)
+

@@ -97,7 +97,6 @@ class DataProcessor():
         while True:
             if len(remainder) == 0:
                 filename = splitext(random.choice(self.files))[0]
-                print(filename)
                 music_data = self.load_processed_file(filename)
                 #music_data = self.load_processed_file("bruh_besser")
 
@@ -137,6 +136,22 @@ class DataProcessor():
     def train_generator_with_padding(self, sequence_length):
         pass
 
+    # assumes the vec is really one hot encoded (i.e. in this case 0, .5, 1.0)
+    def one_hot_vec_to_string(self, vec):
+        returnstring = ""
+        for i in range(len(vec)):
+            if vec[i] != 0.0:
+                if vec[i] == 1.0:
+                    returnstring += str(i) + "|1"
+                else:
+                    returnstring += str(i) + "|0"
+                returnstring += ","
+        if len(returnstring) > 0:
+            returnstring = returnstring[:-1]
+        else:
+            returnstring = "r"
+        returnstring += " "
+        return returnstring
     """
     
         
@@ -386,13 +401,6 @@ class DataProcessor():
     # shortcut to convert from number to note
     def num_to_note(self, num):
         return self.num_to_notes_dict[str(num)]
-
-
-
-
-
-
-
 
 
 
