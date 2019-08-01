@@ -22,7 +22,7 @@ model.add(Dropout(0.2))
 model.add(Dense(88, activation="relu"))
 model.add(Dropout(0.2))
 
-model.add(Dense(88, activation="sigmoid"))
+model.add(Dense(88, activation="softmax"))
 
 print(model.summary(90))
 
@@ -32,7 +32,7 @@ model.compile(loss="categorical_crossentropy",
     optimizer=optimizer,
     metrics=["accuracy"])
 
-model.fit_generator(dp.train_generator_no_padding(SEQUENCE_LENGTH), steps_per_epoch=2, epochs=10, verbose=1)
+model.fit_generator(dp.train_generator_no_padding(SEQUENCE_LENGTH), steps_per_epoch=1000, epochs=30, verbose=1)
 
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,

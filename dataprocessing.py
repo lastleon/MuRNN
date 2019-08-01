@@ -81,32 +81,55 @@ class DataProcessor():
         #                   ...
         # [features]        number of notes in a single timestep --> always 88 
 
+        ############# FAILSAFE
+        # --> GPU-memory capabilities aren't exceeded
+        # if the computed batch_size is greater than LIMIT,
+        # then the data is split into three sub-arrays of 
+        # about the same size, but where each array-length is
+        # less than LIMIT. These sub-arrays are yielded seperately,
+        # only after the last sub-array has been yielded a new song
+        # is loaded
+
+        LIMIT = 1000
+
+        remainder = []
+
         while True:
-            music_data = self.load_processed_file(splitext(random.choice(self.files))[0])
-            #music_data = self.load_processed_file("bruh_besser")
+            if len(remainder) == 0:
+                filename = splitext(random.choice(self.files))[0]
+                print(filename)
+                music_data = self.load_processed_file(filename)
+                #music_data = self.load_processed_file("bruh_besser")
 
-            if len(music_data) < sequence_length:
-                sequence_length = len(music_data)
+                if len(music_data) < sequence_length:
+                    sequence_length = len(music_data)
 
-            # batch_size is number of shifts of the training data array + 1
-            batch_size = len(music_data) - sequence_length + 1 
+                # batch_size is number of shifts of the training data array + 1
+                batch_size = len(music_data) - sequence_length + 1
 
-            x_train = np.zeros((batch_size, sequence_length, 88)) # shape of training data is (batch_size, timesteps, features)
-            y_train = np.zeros((batch_size, 88))
+                x_train = np.zeros((batch_size, sequence_length, 88)) # shape of training data is (batch_size, timesteps, features)
+                y_train = np.zeros((batch_size, 88))
 
-            for i in range(batch_size): 
-                for j in range(sequence_length):
-                    for note in music_data[i+j]:        
-                        # a note can be in three states:
-                        # 0.0 : not playing
-                        # 0.5 : playing, but has been playing before
-                        # 1.0 : playing and didn't play before
-                        x_train[i][j][note[0]] = 0.5 if note[1] == 0 else 1.0
-                if i == batch_size-1:
-                    y_train[i] = np.zeros(88)
-                else:
-                    for note in music_data[i+sequence_length]:
-                        y_train[i][note[0]] = 0.5 if note[1] == 0 else 1.0
+                for i in range(batch_size): 
+                    for j in range(sequence_length):
+                        for note in music_data[i+j]:        
+                            # a note can be in three states:
+                            # 0.0 : not playing
+                            # 0.5 : playing, but has been playing before
+                            # 1.0 : playing and didn't play before
+                            x_train[i][j][note[0]] = 0.5 if note[1] == 0 else 1.0
+                    if i == batch_size-1:
+                        y_train[i] = np.zeros(88)
+                    else:
+                        for note in music_data[i+sequence_length]:
+                            y_train[i][note[0]] = 0.5 if note[1] == 0 else 1.0
+                
+                if batch_size > LIMIT:
+                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/LIMIT))))
+                    x_train, y_train = remainder.pop()
+
+            else:
+                x_train, y_train = remainder.pop()
                 
             yield x_train, y_train
                     
