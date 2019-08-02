@@ -25,11 +25,13 @@ class Model:
 
         mkdir_safely("./models/")
 
-        self.SEQUENCE_LENGTH = 100
+        self.SEQUENCE_LENGTH = 300
         self.dp = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
+        self.model = None
         
         self.timesignature = get_datetime_str()
-
+    
+    def new_model(self):
         self.model = Sequential()
 
         self.model.add(CuDNNLSTM(88, input_shape=(None, 88), return_sequences=True))
@@ -41,7 +43,7 @@ class Model:
         self.model.add(Dense(88, activation="relu"))
         self.model.add(Dropout(0.2))
 
-        self.model.add(Dense(88, activation="softmax"))
+        self.model.add(Dense(88, activation="sigmoid"))
 
         print(self.model.summary(90))
 
@@ -55,9 +57,9 @@ class Model:
 
         if save_every_epoch:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=15, verbose=1, callbacks=[checkpointer])
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=40, verbose=1, callbacks=[checkpointer])
         else:
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=15, verbose=1)
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=40, verbose=1)
             self.model.save_weights(path + "weights.hdf5")
 
         with open(path + "model.json", "w") as file:
@@ -80,25 +82,27 @@ class Model:
     
     # chord must be list of numbers between 0 and 87
     # TODO: sanitize input
-    def make_song(self, length, chord=[41]):
+    def make_song(self, length, chord=[50]):
 
         song_string = ""
+        # np.set_printoptions(threshold=np.inf)
 
         song = np.zeros((length, 88))
         sequence = np.zeros((1, self.SEQUENCE_LENGTH, 88))
 
         for note in chord:
-            sequence[-1][note] = 1.0
+            sequence[0][-1][note] = 1.0
             song[0][note] = 1.0
+
         song_string += self.dp.one_hot_vec_to_string(song[0])
-        np.set_printoptions(threshold=np.inf)
+        
         
         for i in range(length-1):
 
             prediction = self.model.predict(sequence, batch_size=1)[0]
-
+            
             for j in range(len(prediction)):
-                # this is actually stupid, as I'm using softmax
+
                 if prediction[j] < 0.33:
                     prediction[j] = 0
                 elif prediction[j] < 0.66:
@@ -109,28 +113,38 @@ class Model:
             song[i+1] = prediction[:]
 
             sequence = np.roll(sequence, -88)
-            sequence[-1] = prediction[:]
+            sequence[0][-1] = prediction[:]
 
             song_string += self.dp.one_hot_vec_to_string(prediction[:])
-        mkdir_safely("./songs/")
-        print(song)
-        with open("./songs/song-" + get_datetime_str() + ".txt", "w") as file:
+
+        for i in range(length):
+            print(np.array_equal(song[i], np.zeros(song[i].shape)))
+
+        mkdir_safely("./models/model-" + self.timesignature + "/songs/")
+        
+        songpath = "./models/model-" + self.timesignature + "/songs/song-" + get_datetime_str() + ".txt"
+
+        with open(songpath, "w") as file:
             file.write(song_string)
             file.flush()
+
+        return songpath
     
     def compile(self):
         optimizer = tf.keras.optimizers.Adam(lr=1e-3, decay=1e-5)
 
-        self.model.compile(loss="categorical_crossentropy",
+        self.model.compile(loss="mean_absolute_error",
             optimizer=optimizer,
             metrics=["accuracy"])
         
 if __name__ == '__main__':
     model = Model()
-
+    
+    model.new_model()
     model.train()
-    #model.load_model("model-2019-08-01_18-37-32")
-    model.make_song(300)
+    #model.load_model("model-2019-08-02_18-44-34")
+    
+    model.dp.retrieve_midi_from_processed_file_v3(model.make_song(300))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
 ############# SO IT CAN RUN ON BOTH CPU AND GPU
