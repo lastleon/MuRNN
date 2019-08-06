@@ -189,7 +189,7 @@ class DataProcessor():
         # only after the last sub-array has been yielded a new song
         # is loaded
 
-        LIMIT = 300
+        LIMIT = 200
 
         remainder = []
 
@@ -215,7 +215,7 @@ class DataProcessor():
                         x_train[i][j][0] = float(self.note_to_num(note)) / float(len(self.vocab))
 
                     if i == batch_size-1:
-                        y_train[i] = np.ones(len(self.vocab)) * -1
+                        y_train[i] = np.zeros(len(self.vocab))
                     else:
                         note = music_data[i+sequence_length]
                         y_train[i][self.note_to_num(note)] = 1.0

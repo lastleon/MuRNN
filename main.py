@@ -29,7 +29,7 @@ class Model:
 
         self.dp = None
         self.data_path = ".\\clean_dataset\\"
-        self.SEQUENCE_LENGTH = 300
+        self.SEQUENCE_LENGTH = 200
         self.model = None
         
         self.timesignature = get_datetime_str()
@@ -41,13 +41,10 @@ class Model:
         self.model = Sequential()
         # TODO: change model specs like input shape, ...
 
-        self.model.add(CuDNNLSTM(2500, input_shape=(None, 1), return_sequences=True))
+        self.model.add(CuDNNLSTM(500, input_shape=(None, 1), return_sequences=False))
         self.model.add(Dropout(0.2))
 
-        self.model.add(CuDNNLSTM(2500))
-        self.model.add(Dropout(0.2))
-
-        self.model.add(Dense(2500, activation="relu"))
+        self.model.add(Dense(1500, activation="relu"))
         self.model.add(Dropout(0.2))
 
         self.model.add(Dense(len(self.dp.vocab), activation="softmax"))
@@ -64,9 +61,9 @@ class Model:
 
         if save_every_epoch:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=100, verbose=1, callbacks=[checkpointer])
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=700, epochs=100, verbose=1, callbacks=[checkpointer])
         else:
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=100, verbose=1)
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=700, epochs=100, verbose=1)
             #self.model.fit_generator(self.dp.train_generator_test(), steps_per_epoch=500, epochs=40, verbose=1)
             self.model.save_weights(path + "weights.hdf5")
 
@@ -95,7 +92,7 @@ class Model:
         # np.set_printoptions(threshold=np.inf)
 
         song = []
-        sequence = np.ones((1, self.SEQUENCE_LENGTH, 1)) * -1
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 1))
         random_note = random.randint(0, len(self.dp.vocab))
         sequence[0][-1][0] =  random_note / len(self.dp.vocab)
         song.append(self.dp.num_to_note(random_note))
@@ -138,7 +135,7 @@ if __name__ == '__main__':
     model = Model()
     model.new_model()
     # something wrong with retrieve v2
-    model.train(save_every_epoch=True)
+    model.train()
     #model.load_model("model-2019-08-06_17-54-15")
     
     model.dp.retrieve_midi_from_processed_file(model.make_song(20))
