@@ -24,9 +24,11 @@ print(bruh)
 """
 np.set_printoptions(threshold=np.inf)
 
+print(next(d.train_generator_no_padding(sequence_length=2))[0])
+
 #print(next(d.train_generator_no_padding()))
 
-d.retrieve_midi_from_processed_file_v3("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\what_is_this_thing.txt")
+#d.retrieve_midi_from_processed_file_v3("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\what_is_this_thing.txt")
 
 #bruh = [("a", 1), ("b", 2), ("c", 3)]
 

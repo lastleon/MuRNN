@@ -2,13 +2,23 @@ import music21
 from os.path import isdir, isfile, join, splitext, basename, curdir
 from os import listdir
 from decimal import Decimal
-import re
 import numpy as np
 import random # may not be random enough
 
 class DataProcessor():
 
-    def __init__(self, dir_path): 
+    def __init__(self, dir_path, version=1):
+        # the two versions of file-processing are described in
+        # their respective functions (i.e. create_processed_file_v1 and create_processed_file_v2)
+
+        print("""
+        WARNING: The processed midi-files do not save on which version of file-processing they were created.
+        To make sure the files are processed with the version you need, it is best to delete them and create new ones.
+        A feature to handle this internally will come soon.
+        """)
+
+        self.version = version
+
         # declaration for ease of use later
         self.twelfth = Decimal("0.083333333333333333333333333333333333333") # 1 / 12
         self.lowest_piano_note = music21.note.Note("A0")
@@ -49,11 +59,11 @@ class DataProcessor():
             # (if possible)
             if not splitext(file)[0] + ".txt" in complete_filelist:
                 # if not possible, the filename is removed from 'files'
-                if not self.create_processed_file_v3(join(self.dir_path, file)):
-                    files.remove(file)
-                else:
+                if self.create_processed_file(join(self.dir_path, file)):
                     print("File '" + splitext(file)[0] + ".txt' was created...")
                     created_files_counter += 1
+                else:
+                    files.remove(file)
 
         if len(files) == 0:
             raise FileNotFoundError("There are no fitting files in this directory...")
@@ -61,6 +71,15 @@ class DataProcessor():
             self.files = files
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
+
+    def train_generator_test(self):
+        seq_len = 100
+
+        while True:
+            x_train = np.ones((20, seq_len, 88))
+            y_train = np.ones((20, 88))
+
+            yield x_train, y_train
 
     def train_generator_no_padding(self, sequence_length=10):
 
@@ -90,7 +109,7 @@ class DataProcessor():
         # only after the last sub-array has been yielded a new song
         # is loaded
 
-        LIMIT = 400
+        LIMIT = 3
 
         remainder = []
 
@@ -98,7 +117,7 @@ class DataProcessor():
             if len(remainder) == 0:
                 filename = splitext(random.choice(self.files))[0]
                 music_data = self.load_processed_file(filename)
-                #music_data = self.load_processed_file("bruh_besser")
+                #music_data = self.load_processed_file("megalovania")
 
                 if len(music_data) < sequence_length:
                     sequence_length = len(music_data)
@@ -112,7 +131,12 @@ class DataProcessor():
                 for i in range(batch_size): 
                     for j in range(sequence_length):
                         for note in music_data[i+j]:        
-                            # a note can be in three states:
+                            ## a note can be in three states:
+                            #### version 1
+                            # 0.0 : note not playing
+                            # 0.5 : note playing, but has been playing before
+                            # 1.0 : note playing and hasn't been playing before
+                            #### version 2
                             # 0.0 : do nothing
                             # 0.5 : stop note
                             # 1.0 : start note
@@ -181,316 +205,23 @@ class DataProcessor():
             print("File with path '" + full_path + "' could not be loaded...")
             return None
 
-    ## META-INFO ABOUT THE FILEFORMAT
-    ## files will look like this:
-    ##                                                     dividor-space       dividor-space
-    ## <----------------------timestep-1--------------------- >|<--timestep-2--->|<timestep-3>
-    ## /---------------------note-1---------------------\ /n2\ V/n-1\ /n-2\ /n-3\V/n-1\ /n-2\
-    ## [notenumber, 0-87]|[is it a new note? 0:no, 1:yes],..... .....,.....,..... .....,.....
-    def create_processed_file_v2(self, f_path):
-        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
-            # stream of notes flattened and sorted
-            m_stream = music21.converter.parse(f_path).flat.sorted
-            
-            notes = {}
+    def create_processed_file(self, f_path):
+        if self.version == 1:
+            return self.create_processed_file_v1(f_path)
+        elif self.version == 2:
+            return self.create_processed_file_v2(f_path)
+        else:
+            raise Exception("Version '" + self.version + "' does not exist...")
 
-            # lower and upper bounds of stream
-            # below / beyond the bounds there are just rests
-            low_end = round(Decimal(str(m_stream.lowestOffset)) / self.twelfth)
-            high_end = round(Decimal(str(m_stream.highestTime)) / self.twelfth) - low_end
+    def retrieve_midi_from_processed_file(self, f_path):
+        if self.version == 1:
+            self.retrieve_midi_from_processed_file_v1(f_path)
+        elif self.version == 2:
+            self.retrieve_midi_from_processed_file_v2(f_path)
+        else:
+            raise Exception("Version '" + self.version + "' does not exist...")
 
-            # initialization of the notecontainer for each step
-            for i in range(0,high_end+1):
-                notes[str(i)] = []
-
-            for note in m_stream.notes:
-                # converting both offset and duration
-                ##### this float() could make a mess #####
-                note_offset = int(round((Decimal(float(note.offset)) / self.twelfth) - low_end)) 
-                note_duration = int(round(Decimal(float(note.duration.quarterLength)) / self.twelfth))
-                
-                # every pitch in the note (or chord) gets added
-                # to the containers of each step of the duration
-                # example:
-                # C#: offset=>3.0,          duration=>0.5
-                # --> 3.0/0.0833... = 36    0.5/0.0833... = 6
-                # ---> notes["36"].append("C#"), notes["37"].append("C#"),
-                # ---> ........ notes["41"].append("C#") - end
-
-                for i in range(0, note_duration):
-                    for elem in note.pitches:
-                        print(elem)
-                        # if elem is a note with only ONE name (contrary to C# <-> D-)
-                        # then the string for the note in the regex is only that:
-                        # i.e. D4
-                        if elem.accidental == None or elem.accidental.modifier == "":
-                            notes_for_regex = elem.nameWithOctave
-                        # if elem can have two names, the note in the regex is (note1 | note2)
-                        else:
-                            notes_for_regex = "(" + elem.nameWithOctave + "|" + elem.getEnharmonic().nameWithOctave + ")"
-
-                        # if there is at least one occurance of the note elem, then it won't be added
-                        if not re.compile("[\s,\,]?" + notes_for_regex + "[\s,\,]?").search(" ".join(notes[str(note_offset + i)])):
-                            # name of the note converted to its number-representation (i.e. A0 -> 0, ..., C8-> 87)
-                            notenum = self.note_to_num(elem.simplifyEnharmonic().nameWithOctave)
-                            # if the note was already playing before -> 0
-                            # if the note is now played for the first time -> 1
-                            first_played_note = "1" if i==0 else "0"
-
-                            notes[str(note_offset + i)].append(notenum + "|" + first_played_note)
-
-            # if there is nothing in the notecontainer
-            # then only "rest" is written
-            with open(splitext(f_path)[0] + ".txt", "w") as f:
-                for i in range(0, len(notes)):
-                    if len(notes[str(i)]) == 0:
-                        f.write("r ")
-                    else:
-                        f.write(",".join(notes[str(i)]) + " ")
-            
-            return True
-        return False
-
-    def retrieve_midi_from_processed_file_v2(self, f_path):
-        if isfile(f_path) and splitext(f_path)[1] == '.txt':
-            # used for storing notes that are playing at the moment
-            # of the timestep / assigned to the note is the startoffset
-            # of the note
-            currently_playing_notes = {}
-
-            m_stream = music21.stream.Stream()
-            m_stream.autoSort = True
-            m_stream.insert(0, music21.instrument.Piano())
-
-            with open(f_path, "r") as f:
-                # list with all timesteps
-                timesteps = f.readlines()[0].split(' ')
-                # the last item will always be an empty String
-                # so it can be removed
-                del timesteps[-1]
-                # this is used to count the amount of
-                # timesteps already passed
-                current_timestep = 0
-                
-                # iterate over every timestep
-                for timestep_content in timesteps:
-                    # note_nums from the timestep_content loop are temporarily saved here
-                    notes_from_timestep_content = []
-
-                    # iterate over every note tuple / the notes that should
-                    # be playing at the moment, if they exist
-                    if timestep_content != 'r':
-                        for note_tuple in timestep_content.split(','):
-                            
-                            note_num = note_tuple.split('|')[0]
-                            notes_from_timestep_content.append(note_num)
-
-                            is_startnote = note_tuple.split('|')[1]
-                            
-                            # the note has already been playing
-                            if note_num in currently_playing_notes:
-                                # it is a new note, which means that the note was
-                                # hit a second time:
-                                # --> the note will be added to the stream
-                                # --> the timestep saved in the currently-playing-dictionary
-                                #     has to be updated
-                                if is_startnote == "1":
-                                    # the new note
-                                    note = music21.note.Note(self.num_to_note(note_num))
-                                    # note offset from the beginning is converted to quarter-time-form and set
-                                    note.offset = float(Decimal(currently_playing_notes[note_num]) * self.twelfth)
-                                    # note duration is calculated, converted to quarter-time-form and set
-                                    delta_t = current_timestep - currently_playing_notes[note_num]
-                                    note.duration = music21.duration.Duration(float(Decimal(delta_t) * self.twelfth))
-                                    # inserted into stream
-                                    m_stream.insert(note)
-
-                                    # timestep is updated
-                                    currently_playing_notes[note_num] = current_timestep
-                            # the note has not been playing yet
-                            else:
-                                # added to currently-playing-dictionary
-                                currently_playing_notes[note_num] = current_timestep
-                    
-                    # loop over all currently playing notes
-                    # to find out which shouln't be playing
-                    # anymore
-                    for curr_note in currently_playing_notes.copy():
-                        # if note shouldn't be playing
-                        # it will be saved in the stream and
-                        # deleted from the dictionary
-                        if curr_note not in notes_from_timestep_content:
-                            # the new note
-                            note = music21.note.Note(self.num_to_note(curr_note))
-                            # note offset from the beginning is converted to quarter-time-form and set
-                            note.offset = float(Decimal(currently_playing_notes[curr_note]) * self.twelfth)
-                            # note duration is calculated, converted to quarter-time-form and set
-                            delta_t = current_timestep - currently_playing_notes[curr_note]
-                            note.duration = music21.duration.Duration(float(Decimal(delta_t) * self.twelfth))
-                            # inserted into stream
-                            m_stream.insert(note)
-                            # entry in dictionary deleted
-                            del currently_playing_notes[curr_note]
-
-                    current_timestep += 1
-                
-                m_stream.write('midi', fp=(splitext(f_path)[0] + '-retrieved.midi'))
     
-    # different approach!
-    ################################      something fishy going on, megalovania wasn't encoded correctly!
-    def create_processed_file_v3(self, f_path):
-        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
-            # stream of notes flattened and sorted
-            m_stream = music21.converter.parse(f_path).flat.sorted
-            
-            notes = {}
-
-            # lower and upper bounds of stream
-            # below / beyond the bounds there are just rests
-            low_end = round(Decimal(str(m_stream.lowestOffset)) / self.twelfth)
-            high_end = round(Decimal(str(m_stream.highestTime)) / self.twelfth) - low_end
-
-            # initialization of the notecontainer for each step
-            for i in range(0,high_end+1):
-                notes[i] = []
-
-            for note in m_stream.notes:
-                # converting both offset and duration
-                ##### this float() could make a mess #####
-                note_offset = int(round((Decimal(float(note.offset)) / self.twelfth) - low_end)) 
-                note_duration = int(round(Decimal(float(note.duration.quarterLength)) / self.twelfth))
-                
-                # every pitch (converted to its number-representation) in the note (or chord) 
-                # and its 'status' (i.e. start (1) or end (0) of note)
-                # gets added to the containers of the beginning and end of the duration
-                # example:
-                # 44: offset=>3.0,          duration=>0.5
-                # --> 3.0/0.0833... = 36    0.5/0.0833... = 6
-                # ---> notes[36].append((44, 1) & notes[41].append((44, 2)) - end
-
-                for elem in note.pitches:
-
-                    note_num = self.note_to_num(elem.nameWithOctave)
-                    
-                    # set the start of the note
-                    # META-INFO:
-                    # [[note1, note2, note3], [status1, status2, status3]]
-                    split_notes_and_status = list(zip(*notes[note_offset]))
-                    
-                    # safety measure [1]: when the list in notes at note_offset is empty,
-                    # the above expression returns an empty list
-                    # --> the expression below would produce an index out of bounds exception 
-                    notes_at_offset = split_notes_and_status[0] if len(split_notes_and_status) > 0 else []
-                    
-                    if note_num in notes_at_offset:
-                        # if the note is already in the notecontainer at the startoffset of the note,
-                        # then set the 'status' to 1 to indicate the note starts at that offset (i.e.
-                        # closing of the note is overwritten)
-                        # 
-                        # if the note wasn't closed before (i.e. the same note started but never ended),
-                        # the end of the note is implied before the note starts again 
-                        notes[note_offset][notes_at_offset.index(note_num)][1] = 1
-                    else:
-                        # otherwise it just gets added
-                        notes[note_offset].append([note_num, 1])
-
-                    # set the end of the note
-                    
-                    # safety measure: if there is a note with offset 0 and duration 0, this would cause
-                    # wrong behavior if not checked
-                    end_offset = note_offset+note_duration-1 if note_offset+note_duration-1 >= 0 else 0
-                    
-                    # for explanation see first 'split_notes_and_status'
-                    split_notes_and_status = list(zip(*notes[end_offset]))
-                    
-                    # safety measure: see safety measure [1]
-                    notes_at_offset = split_notes_and_status[0] if len(split_notes_and_status) > 0 else []
-                    # here there is no need to check if, in case note_num already is in the container,
-                    # the 'status' is 0, as there is no way it could have been set to 1
-                    # this has to do with the fact the stream of notes is sorted 
-                    if not (note_num in notes_at_offset):
-                        notes[end_offset].append([note_num, 0])
-
-            # if there is nothing in the notecontainer
-            # then only "r" (= rest) is written
-            with open(splitext(f_path)[0] + ".txt", "w") as f:
-                for i in range(0, len(notes)):
-                    if len(notes[i]) == 0:
-                        f.write("r ")
-                    else:
-                        complete_string = ""
-                        
-                        for t in notes[i]:
-                            complete_string += str(t[0]) + "|" + str(t[1]) + ","
-                        complete_string = complete_string[:-1] + " "
-
-                        f.write(complete_string)
-            
-            return True
-        return False
-
-    def retrieve_midi_from_processed_file_v3(self, f_path):
-        # note_num in number-representation, offset & duration in int-representation
-        def add_to_stream(stream, note_num, start_offset, end_offset):
-            # the new note
-            note = music21.note.Note(self.num_to_note(note_num))
-            # note offset from the beginning is converted to quarter-time-form and set
-            note.offset = float(Decimal(start_offset) * self.twelfth)
-            # note duration is calculated, converted to quarter-time-form and set
-            delta_t = end_offset - start_offset
-            note.duration = music21.duration.Duration(float(Decimal(delta_t) * self.twelfth))
-            # inserted into stream
-            stream.insert(note)
-
-        if isfile(f_path) and splitext(f_path)[1] == '.txt':
-            # used for storing notes that are playing at the moment
-            # of the timestep / assigned to the note is the startoffset
-            # of the note
-            currently_playing_notes = {}
-
-            m_stream = music21.stream.Stream()
-            m_stream.autoSort = True
-            m_stream.insert(0, music21.instrument.Piano())
-
-            with open(f_path, "r") as f:
-                # list with all timesteps
-                timesteps = f.readlines()[0].split(' ')
-                # the last item will always be an empty String
-                # so it can be removed
-                del timesteps[-1]
-                # this is used to count the amount of
-                # timesteps already passed
-                current_timestep = 0
-                # iterate over every timestep
-                for timestep_content in timesteps:
-
-                    # iterate over every note tuple
-                    if timestep_content != 'r':
-                        for note_tuple in timestep_content.split(','):
-                            note_num = int(note_tuple.split('|')[0])
-                            status = int(note_tuple.split('|')[1])
-                            
-                            # if the note has been playing before and a new note_tuple with the same note 
-                            # is in timestep_content, the note will be added to the stream regardless of the status 
-                            if note_num in currently_playing_notes:
-                                add_to_stream(m_stream, note_num, currently_playing_notes[note_num], current_timestep)
-
-                            if status == 1:
-                                # update timestep if the note should be played
-                                currently_playing_notes[note_num] = current_timestep
-                            else:
-                                # or else delete entry in dictionary
-                                if note_num in currently_playing_notes:
-                                    del currently_playing_notes[note_num]
-                    current_timestep += 1
-
-                # if there are any notes that haven't been closed at the end of the song,
-                # they will be closed here
-                for note in currently_playing_notes:
-                    add_to_stream(m_stream, note, currently_playing_notes[note], current_timestep)
-                
-                m_stream.write('midi', fp=(splitext(f_path)[0] + '-retrieved.midi'))
-        
 
     # this builds the conversion-dictionaries
     # enharmonics are also considered in the
