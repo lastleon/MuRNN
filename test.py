@@ -4,16 +4,18 @@ import music21
 import numpy as np
 #import tensorflow as tf
 
-d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
+#d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
 
-d.make_conversion_dictionaries()
+#d.make_conversion_dictionaries()
 #print(len(d.get_vocab()))
 
 #print(".".join(["brah", "yag"]))
 #d.create_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\megalovania.mid")
 #d.process_files("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
 
-#d.retrieve_midi_from_processed_file_v3("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\megalovania.txt")
+#print(d.load_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\NN\\models\\model-2019-08-06_17-54-15\\songs\\song-2019-08-06_18-46-29.mu"))
+
+#d.retrieve_midi_from_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\megalovania.mu")
 
 #print(next(d.train_generator())[1].shape)
 

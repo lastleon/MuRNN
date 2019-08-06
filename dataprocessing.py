@@ -61,33 +61,23 @@ class DataProcessor():
         else:
             self.files = files
             self.vocab = self.get_vocab()
-            self.note_to_num, self.num_to_note = self.make_conversion_dictionaries()
+            self.notes_to_num_dict, self.num_to_notes_dict = self.make_conversion_dictionaries()
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
 
     
     
     def create_processed_file(self, f_path):
-        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
+        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid') and not splitext(f_path)[0].endswith("retrieved"):
             # stream of notes flattened and sorted
             m_stream = music21.converter.parse(f_path).flat.sorted
             
             notes = []
 
-            # lower and upper bounds of stream
-            # below / beyond the bounds there are just rests
-            low_end = round(Decimal(str(m_stream.lowestOffset)) / self.twelfth)
-            high_end = round(Decimal(str(m_stream.highestTime)) / self.twelfth) - low_end
-
-            # initialization of the notecontainer for each step
-            for i in range(0,high_end+1):
-                notes.append([])
-
             for note in m_stream.notes:
                 # converting both offset and duration
-                ##### this float() could make a mess #####
-                note_offset = int(round((Decimal(float(note.offset)) / self.twelfth) - low_end)) 
-                note_duration = int(round(Decimal(float(note.duration.quarterLength)) / self.twelfth))
+                ##### this float() could make a mess ##### 
+                note_duration = note.duration.quarterLength
                 
                 # every pitch in the note (or chord) gets added
                 # to the containers of each step of the duration
@@ -97,61 +87,53 @@ class DataProcessor():
                 # ---> notes["36"].append("C#"), notes["37"].append("C#"),
                 # ---> ........ notes["41"].append("C#") - end
 
-                for i in range(0, note_duration):
+                
                     
-                    pitches = note.pitches
-                    pitch_names = []
-                    
-                    # add pitchnames to list, if note is a chord (has more than one pitch) then they are first sorted
-                    # if a pitch is ambiguous (e.g. C# <-> D-), then the (alphabetically) first name is chosen
-                    for i in range(len(pitches)):
-                        if not (pitches[i].accidental == None or pitches[i].accidental.modifier == ""):
-                            pitch_versions = [pitches[i].nameWithOctave, pitches[i].getEnharmonic().nameWithOctave]
-                            pitch_versions.sort()
-                            pitch_names.append(pitch_versions[0])
-                        else:
-                            pitch_names.append(pitches[i].nameWithOctave)
-                    
-                    pitch_names.sort()
+                pitches = note.pitches
+                pitch_names = []
+                
+                # add pitchnames to list, if note is a chord (has more than one pitch) then they are first sorted
+                # if a pitch is ambiguous (e.g. C# <-> D-), then the (alphabetically) first name is chosen
+                for i in range(len(pitches)):
+                    if not (pitches[i].accidental == None or pitches[i].accidental.modifier == ""):
+                        pitch_versions = [pitches[i].nameWithOctave, pitches[i].getEnharmonic().nameWithOctave]
+                        pitch_versions.sort()
+                        pitch_names.append(pitch_versions[0])
+                    else:
+                        pitch_names.append(pitches[i].nameWithOctave)
+                
+                pitch_names.sort()
 
-                    pitch_name_string = ",".join(pitch_names)
-                    first_played_note = 1 if i==0 else 0
-                    
-                    split_notes_and_status = list(zip(*notes[note_offset + i]))
-                    # failsafe, as 'split_notes_and_status[0]' may raise index out of bounds exception if
-                    # the above expression only returns an empty list 
-                    notes_at_offset = split_notes_and_status[0] if len(split_notes_and_status) > 0 else []
+                pitch_name_string = ",".join(pitch_names)
 
-                    #### could be improved
-                    if not pitch_name_string in notes_at_offset:
-                        notes[note_offset + i].append((pitch_name_string, first_played_note))
+                notes.append(pitch_name_string + " " + str(note_duration))
 
-                    
+                
 
 
 
 
-                    """
-                    for elem in note.pitches:
-                        # if elem is a note with only ONE name (contrary to C# <-> D-)
-                        # then the string for the note in the regex is only that:
-                        # i.e. D4
-                        if elem.accidental == None or elem.accidental.modifier == "":
-                            notes_for_regex = elem.nameWithOctave
-                        # if elem can have two names, the note in the regex is (note1 | note2)
-                        else:
-                            notes_for_regex = "(" + elem.nameWithOctave + "|" + elem.getEnharmonic().nameWithOctave + ")"
+                """
+                for elem in note.pitches:
+                    # if elem is a note with only ONE name (contrary to C# <-> D-)
+                    # then the string for the note in the regex is only that:
+                    # i.e. D4
+                    if elem.accidental == None or elem.accidental.modifier == "":
+                        notes_for_regex = elem.nameWithOctave
+                    # if elem can have two names, the note in the regex is (note1 | note2)
+                    else:
+                        notes_for_regex = "(" + elem.nameWithOctave + "|" + elem.getEnharmonic().nameWithOctave + ")"
 
-                        # if there is at least one occurance of the note elem, then it won't be added
-                        if not re.compile("[\s,\,]?" + notes_for_regex + "[\s,\,]?").search(" ".join(notes[str(note_offset + i)])):
-                            # name of the note converted to its number-representation (i.e. A0 -> 0, ..., C8-> 87)
-                            notenum = self.note_to_num(elem.simplifyEnharmonic().nameWithOctave)
-                            # if the note was already playing before -> 0
-                            # if the note is now played for the first time -> 1
-                            first_played_note = "1" if i==0 else "0"
+                    # if there is at least one occurance of the note elem, then it won't be added
+                    if not re.compile("[\s,\,]?" + notes_for_regex + "[\s,\,]?").search(" ".join(notes[str(note_offset + i)])):
+                        # name of the note converted to its number-representation (i.e. A0 -> 0, ..., C8-> 87)
+                        notenum = self.note_to_num(elem.simplifyEnharmonic().nameWithOctave)
+                        # if the note was already playing before -> 0
+                        # if the note is now played for the first time -> 1
+                        first_played_note = "1" if i==0 else "0"
 
-                            notes[note_offset + i].append(notenum + "|" + first_played_note)
-                    """
+                        notes[note_offset + i].append(notenum + "|" + first_played_note)
+                """
 
             # if there is nothing in the notecontainer
             # then only "rest" is written
@@ -165,9 +147,8 @@ class DataProcessor():
         for file in glob.glob(self.dir_path + "*.mu"):
             with open(file, "rb") as f:
                 data = pickle.load(f)
-                for timestep in data:
-                    for note, status in timestep:
-                        vocab.add(note)
+                for note in data:
+                    vocab.add(note)
         
         return tuple(vocab)
 
@@ -215,7 +196,7 @@ class DataProcessor():
         while True:
             if len(remainder) == 0:
                 filename = splitext(random.choice(self.files))[0]
-                music_data = self.load_processed_file(filename)
+                music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
                 #music_data = self.load_processed_file("megalovania")
 
                 if len(music_data) < sequence_length:
@@ -224,21 +205,20 @@ class DataProcessor():
                 # batch_size is number of shifts of the training data array + 1
                 batch_size = len(music_data) - sequence_length + 1
 
-                x_train = np.zeros((batch_size, sequence_length, 2)) # shape of training data is (batch_size, timesteps, features)
-                y_train = np.zeros((batch_size, 2))
+                x_train = np.zeros((batch_size, sequence_length, 1)) # shape of training data is (batch_size, timesteps, features)
+                y_train = np.zeros((batch_size, len(self.vocab)))
 
                 for i in range(batch_size): 
                     for j in range(sequence_length):
-                        for note in music_data[i+j]:        
-                            # numerical representation of note/chord, normalized
-                            x_train[i][j][0] = float(self.note_to_num(note[0])) / float(len(self.vocab))
-                            # 0.0: was playing before, 1.0 : is first note
-                            x_train[i][j][1] = float(note[1])
+                        note = music_data[i+j]    
+                        # numerical representation of note/chord, normalized
+                        x_train[i][j][0] = float(self.note_to_num(note)) / float(len(self.vocab))
+
                     if i == batch_size-1:
-                        y_train[i] = np.zeros(88)
+                        y_train[i] = np.zeros(len(self.vocab))
                     else:
-                        for note in music_data[i+sequence_length]:
-                            y_train[i][note[0]] = 0.5 if note[1] == 0 else 1.0
+                        note = music_data[i+sequence_length]
+                        y_train[i][self.note_to_num(note)] = 1.0
                 
                 if batch_size > LIMIT:
                     remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/LIMIT))))
@@ -276,24 +256,36 @@ class DataProcessor():
     #   [ (note, curr_playing) ],                                            <- timestep 2
     #   [ ...,                                                               <- timestep 3
     # ]
-    def load_processed_file(self, f_name):
-        full_path = join(self.dir_path, f_name + ".mu")
-        if isfile(full_path):
-            with open(full_path, "rb") as f:
+    def load_processed_file(self, f_path):
+        if isfile(f_path):
+            with open(f_path, "rb") as f:
                 return pickle.load(f)
         else:
-            print("File with path '" + full_path + "' could not be loaded...")
+            print("File with path '" + f_path + "' could not be loaded...")
             return None
 
     
 
     def retrieve_midi_from_processed_file(self, f_path):
-        if self.version == 1:
-            self.retrieve_midi_from_processed_file_v1(f_path)
-        elif self.version == 2:
-            self.retrieve_midi_from_processed_file_v2(f_path)
-        else:
-            raise Exception("Version '" + self.version + "' does not exist...")
+        if isfile(f_path) and splitext(f_path)[1] == ".mu":
+            with open(f_path, "rb") as f:
+                data = pickle.load(f)
+                stream = music21.stream.Stream()
+                for datapoint in data:
+                    pitch, duration = datapoint.split(" ")
+                    
+                    if len(duration.split("/")) > 1:
+                        duration = float(Decimal(duration.split("/")[0]) / Decimal(duration.split("/")[1]))
+                    else:
+                        duration = float(duration)
+
+                    if "," in pitch:
+                        note = music21.chord.Chord(pitch.split(","))
+                    else:
+                        note = music21.note.Note(pitch)
+                    note.duration = music21.duration.Duration(duration)
+                    stream.append(note)
+                stream.write('midi', fp=(splitext(f_path)[0]+"-retrieved.midi"))
 
     
     """

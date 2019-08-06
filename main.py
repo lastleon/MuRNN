@@ -8,6 +8,8 @@ import json
 import numpy as np
 import os
 from dataprocessing import DataProcessor
+import pickle
+import random
 
 
 def get_datetime_str():
@@ -38,16 +40,17 @@ class Model:
 
         self.model = Sequential()
         # TODO: change model specs like input shape, ...
-        self.model.add(CuDNNLSTM(512, input_shape=(None, 88), return_sequences=True))
+
+        self.model.add(CuDNNLSTM(1, input_shape=(None, 1), return_sequences=True))
         self.model.add(Dropout(0.2))
 
-        self.model.add(CuDNNLSTM(512))
+        self.model.add(CuDNNLSTM(1))
         self.model.add(Dropout(0.2))
 
-        self.model.add(Dense(256, activation="relu"))
+        self.model.add(Dense(2500, activation="relu"))
         self.model.add(Dropout(0.2))
 
-        self.model.add(Dense(88, activation="sigmoid"))
+        self.model.add(Dense(len(self.dp.vocab), activation="softmax"))
 
         print(self.model.summary(90))
 
@@ -82,79 +85,63 @@ class Model:
         with open(path + "variables.json", "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
-            self.dp = DataProcessor(self.data_path, int(variables["FILE_PROCESSING_VERSION"]))
+            self.dp = DataProcessor(self.data_path)
         self.model.load_weights(path + "weights.hdf5")
         self.timesignature = model_dir.replace("model-", "")
 
         self.compile()
     
-    # chord must be list of numbers between 0 and 87
-    # TODO: sanitize input
-    def make_song(self, length, chord=[50]):
-        """
-        TODO: change this as well
-        song_string = ""
+    def make_song(self, length):
         # np.set_printoptions(threshold=np.inf)
 
-        song = np.zeros((length, 88))
-        sequence = np.zeros((1, self.SEQUENCE_LENGTH, 88))
+        song = []
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 1)) * -1
+        random_note = random.randint(0, len(self.dp.vocab))
+        sequence[0][-1][0] =  random_note / len(self.dp.vocab)
+        song.append(self.dp.num_to_note(random_note))
 
-        for note in chord:
-            sequence[0][-1][note] = 1.0
-            song[0][note] = 1.0
+        print(sequence)
 
-        song_string += self.dp.one_hot_vec_to_string(song[0])
-        
-        
         for i in range(length-1):
-
+            input("press any button...")
             prediction = self.model.predict(sequence, batch_size=1)[0]
             
-            for j in range(len(prediction)):
-
-                if prediction[j] < 0.33:
-                    prediction[j] = 0
-                elif prediction[j] < 0.66:
-                    prediction[j] = 0.5
-                else:
-                    prediction[j] = 1.0
+            index_of_prediction = np.where(prediction == np.amax(prediction))[0][0]
+            note = self.dp.num_to_note(index_of_prediction)
             
-            song[i+1] = prediction[:]
+            song.append(note)
 
-            sequence = np.roll(sequence, -88)
-            sequence[0][-1] = prediction[:]
+            sequence = np.roll(sequence, -1)
+            sequence[0][-1][0] = index_of_prediction / len(self.dp.vocab)
 
-            song_string += self.dp.one_hot_vec_to_string(prediction[:])
-
-        for i in range(length):
-            print(np.array_equal(song[i], np.zeros(song[i].shape)))
+            print(sequence)
+            print(index_of_prediction)
 
         mkdir_safely("./models/model-" + self.timesignature + "/songs/")
         
-        songpath = "./models/model-" + self.timesignature + "/songs/song-" + get_datetime_str() + ".txt"
+        songpath = "./models/model-" + self.timesignature + "/songs/song-" + get_datetime_str() + ".mu"
 
-        with open(songpath, "w") as file:
-            file.write(song_string)
-            file.flush()
+        with open(songpath, "wb") as f:
+            pickle.dump(song, f)
 
         return songpath
-        """
-        pass
+        
     
     def compile(self):
         optimizer = tf.keras.optimizers.SGD(lr=0.01, momentum=0.001)
 
-        self.model.compile(loss="mean_absolute_error",
-            optimizer=optimizer,
+        self.model.compile(loss="categorical_crossentropy",
+            optimizer="adam",
             metrics=["accuracy"])
         
 if __name__ == '__main__':
     model = Model()
+    #model.new_model()
     # something wrong with retrieve v2
     #model.train()
-    model.load_model("model-2019-08-05_15-37-36")
+    model.load_model("model-2019-08-06_17-54-15")
     
-    model.dp.retrieve_midi_from_processed_file(model.make_song(300))
+    model.dp.retrieve_midi_from_processed_file(model.make_song(20))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
 ############# SO IT CAN RUN ON BOTH CPU AND GPU
