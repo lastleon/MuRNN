@@ -2,8 +2,11 @@ import music21
 from os.path import isdir, isfile, join, splitext, basename, curdir
 from os import listdir
 from decimal import Decimal
+import re
 import numpy as np
 import random # may not be random enough
+import pickle
+import glob
 
 class DataProcessor():
 
@@ -14,9 +17,6 @@ class DataProcessor():
         self.twelfth = Decimal("0.083333333333333333333333333333333333333") # 1 / 12
         self.lowest_piano_note = music21.note.Note("A0")
         self.highest_piano_note = music21.note.Note("C8")
-
-        # build conversiondict for notes to nums, needed later
-        self.notes_to_num_dict, self.num_to_notes_dict = self.make_conversion_dictionaries()
 
         # check if path to directory is valid
         if isdir(dir_path):
@@ -48,10 +48,10 @@ class DataProcessor():
         for file in files.copy():
             # if a there is no .txt file to a midi file, it will be created 
             # (if possible)
-            if not splitext(file)[0] + ".txt" in complete_filelist:
+            if not splitext(file)[0] + ".mu" in complete_filelist:
                 # if not possible, the filename is removed from 'files'
                 if self.create_processed_file(join(self.dir_path, file)):
-                    print("File '" + splitext(file)[0] + ".txt' was created...")
+                    print("File '" + splitext(file)[0] + ".mu' was created...")
                     created_files_counter += 1
                 else:
                     files.remove(file)
@@ -60,15 +60,19 @@ class DataProcessor():
             raise FileNotFoundError("There are no fitting files in this directory...")
         else:
             self.files = files
+            self.vocab = self.get_vocab()
+            self.note_to_num, self.num_to_note = self.make_conversion_dictionaries()
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
 
-        def create_processed_file(self, f_path):
+    
+    
+    def create_processed_file(self, f_path):
         if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
             # stream of notes flattened and sorted
             m_stream = music21.converter.parse(f_path).flat.sorted
             
-            notes = {}
+            notes = []
 
             # lower and upper bounds of stream
             # below / beyond the bounds there are just rests
@@ -77,7 +81,7 @@ class DataProcessor():
 
             # initialization of the notecontainer for each step
             for i in range(0,high_end+1):
-                notes[str(i)] = []
+                notes.append([])
 
             for note in m_stream.notes:
                 # converting both offset and duration
@@ -94,8 +98,41 @@ class DataProcessor():
                 # ---> ........ notes["41"].append("C#") - end
 
                 for i in range(0, note_duration):
+                    
+                    pitches = note.pitches
+                    pitch_names = []
+                    
+                    # add pitchnames to list, if note is a chord (has more than one pitch) then they are first sorted
+                    # if a pitch is ambiguous (e.g. C# <-> D-), then the (alphabetically) first name is chosen
+                    for i in range(len(pitches)):
+                        if not (pitches[i].accidental == None or pitches[i].accidental.modifier == ""):
+                            pitch_versions = [pitches[i].nameWithOctave, pitches[i].getEnharmonic().nameWithOctave]
+                            pitch_versions.sort()
+                            pitch_names.append(pitch_versions[0])
+                        else:
+                            pitch_names.append(pitches[i].nameWithOctave)
+                    
+                    pitch_names.sort()
+
+                    pitch_name_string = ",".join(pitch_names)
+                    first_played_note = 1 if i==0 else 0
+                    
+                    split_notes_and_status = list(zip(*notes[note_offset + i]))
+                    # failsafe, as 'split_notes_and_status[0]' may raise index out of bounds exception if
+                    # the above expression only returns an empty list 
+                    notes_at_offset = split_notes_and_status[0] if len(split_notes_and_status) > 0 else []
+
+                    #### could be improved
+                    if not pitch_name_string in notes_at_offset:
+                        notes[note_offset + i].append((pitch_name_string, first_played_note))
+
+                    
+
+
+
+
+                    """
                     for elem in note.pitches:
-                        print(elem)
                         # if elem is a note with only ONE name (contrary to C# <-> D-)
                         # then the string for the note in the regex is only that:
                         # i.e. D4
@@ -113,19 +150,26 @@ class DataProcessor():
                             # if the note is now played for the first time -> 1
                             first_played_note = "1" if i==0 else "0"
 
-                            notes[str(note_offset + i)].append(notenum + "|" + first_played_note)
+                            notes[note_offset + i].append(notenum + "|" + first_played_note)
+                    """
 
             # if there is nothing in the notecontainer
             # then only "rest" is written
-            with open(splitext(f_path)[0] + ".txt", "w") as f:
-                for i in range(0, len(notes)):
-                    if len(notes[str(i)]) == 0:
-                        f.write("r ")
-                    else:
-                        f.write(",".join(notes[str(i)]) + " ")
-            
+            with open(splitext(f_path)[0] + ".mu", "wb") as f:
+                pickle.dump(notes, f)
             return True
         return False
+
+    def get_vocab(self):
+        vocab = set()
+        for file in glob.glob(self.dir_path + "*.mu"):
+            with open(file, "rb") as f:
+                data = pickle.load(f)
+                for timestep in data:
+                    for note, status in timestep:
+                        vocab.add(note)
+        
+        return tuple(vocab)
 
     def train_generator_test(self):
         seq_len = 100
@@ -164,7 +208,7 @@ class DataProcessor():
         # only after the last sub-array has been yielded a new song
         # is loaded
 
-        LIMIT = 3
+        LIMIT = 300
 
         remainder = []
 
@@ -180,22 +224,16 @@ class DataProcessor():
                 # batch_size is number of shifts of the training data array + 1
                 batch_size = len(music_data) - sequence_length + 1
 
-                x_train = np.zeros((batch_size, sequence_length, 88)) # shape of training data is (batch_size, timesteps, features)
-                y_train = np.zeros((batch_size, 88))
+                x_train = np.zeros((batch_size, sequence_length, 2)) # shape of training data is (batch_size, timesteps, features)
+                y_train = np.zeros((batch_size, 2))
 
                 for i in range(batch_size): 
                     for j in range(sequence_length):
                         for note in music_data[i+j]:        
-                            ## a note can be in three states:
-                            #### version 1
-                            # 0.0 : note not playing
-                            # 0.5 : note playing, but has been playing before
-                            # 1.0 : note playing and hasn't been playing before
-                            #### version 2
-                            # 0.0 : do nothing
-                            # 0.5 : stop note
-                            # 1.0 : start note
-                            x_train[i][j][note[0]] = 0.5 if note[1] == 0 else 1.0
+                            # numerical representation of note/chord, normalized
+                            x_train[i][j][0] = float(self.note_to_num(note[0])) / float(len(self.vocab))
+                            # 0.0: was playing before, 1.0 : is first note
+                            x_train[i][j][1] = float(note[1])
                     if i == batch_size-1:
                         y_train[i] = np.zeros(88)
                     else:
@@ -232,30 +270,17 @@ class DataProcessor():
         returnstring += " "
         return returnstring
 
-    # META-INFO ABOUT THE STRUCTURE OF THE LOADED FILE
+    # STRUCTURE OF THE LOADED FILE
     # [  
-    #   [ [note, curr_playing], [note, curr_playing] ],                      <- timestep 1
-    #   [ [note, curr_playing] ],                                            <- timestep 2
-    #   [ [note, curr_playing], [note, curr_playing], [note, curr_playing] ],<- timestep 3
+    #   [ (note(string), curr_playing(int)), (note, curr_playing) ],         <- timestep 1
+    #   [ (note, curr_playing) ],                                            <- timestep 2
+    #   [ ...,                                                               <- timestep 3
     # ]
     def load_processed_file(self, f_name):
-        full_path = join(self.dir_path, f_name + ".txt")
+        full_path = join(self.dir_path, f_name + ".mu")
         if isfile(full_path):
-            notelist = []
-            with open(full_path, "r") as f:
-                # data is divided into timesteps
-                data = f.readlines()[0].split(" ")
-                if data[-1] == "":
-                    del data[-1]
-                for timestep in data:
-                    notes = timestep.split(",")
-                    processed_notes = []
-                    # each note in a timestep is added
-                    for note in notes:
-                        if note != "r":
-                            processed_notes.append([int(note.split("|")[0]), int(note.split("|")[1])])
-                    notelist.append(processed_notes)
-            return notelist
+            with open(full_path, "rb") as f:
+                return pickle.load(f)
         else:
             print("File with path '" + full_path + "' could not be loaded...")
             return None
@@ -271,7 +296,7 @@ class DataProcessor():
             raise Exception("Version '" + self.version + "' does not exist...")
 
     
-
+    """
     # this builds the conversion-dictionaries
     # enharmonics are also considered in the
     # notes_to_num dictionary:
@@ -314,13 +339,19 @@ class DataProcessor():
                 prev_note = new_note
 
         return notes_to_num, num_to_notes
+    """
+    def make_conversion_dictionaries(self):
+        notes_to_num = dict((note,num) for num,note in enumerate(self.vocab))
+        num_to_notes = dict((num,note) for num,note in enumerate(self.vocab))
+
+        return notes_to_num, num_to_notes
 
     # shortcut to convert from note to number
     def note_to_num(self, note):
         return self.notes_to_num_dict[note]
     # shortcut to convert from number to note
     def num_to_note(self, num):
-        return self.num_to_notes_dict[str(num)]
+        return self.num_to_notes_dict[num]
 
 
 
