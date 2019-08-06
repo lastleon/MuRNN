@@ -32,12 +32,12 @@ class Model:
         
         self.timesignature = get_datetime_str()
     
-    def new_model(self, file_processing_version=1):
+    def new_model(self):
 
-        self.dp = DataProcessor(self.data_path, file_processing_version)
+        self.dp = DataProcessor(self.data_path)
 
         self.model = Sequential()
-
+        # TODO: change model specs like input shape, ...
         self.model.add(CuDNNLSTM(512, input_shape=(None, 88), return_sequences=True))
         self.model.add(Dropout(0.2))
 
@@ -70,8 +70,7 @@ class Model:
         with open(path + "model.json", "w") as file:
             file.write(self.model.to_json())
         with open(path + "variables.json", "w") as file:
-            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ')
-            file.write('"FILE_PROCESSING_VERSION" : ' + str(self.dp.version) + " }")
+            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ' }')
 
     # path to directory
     def load_model(self, model_dir):
@@ -92,7 +91,8 @@ class Model:
     # chord must be list of numbers between 0 and 87
     # TODO: sanitize input
     def make_song(self, length, chord=[50]):
-
+        """
+        TODO: change this as well
         song_string = ""
         # np.set_printoptions(threshold=np.inf)
 
@@ -138,6 +138,8 @@ class Model:
             file.flush()
 
         return songpath
+        """
+        pass
     
     def compile(self):
         optimizer = tf.keras.optimizers.SGD(lr=0.01, momentum=0.001)
@@ -149,7 +151,6 @@ class Model:
 if __name__ == '__main__':
     model = Model()
     # something wrong with retrieve v2
-    #model.new_model(file_processing_version=2)
     #model.train()
     model.load_model("model-2019-08-05_15-37-36")
     
