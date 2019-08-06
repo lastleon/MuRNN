@@ -41,10 +41,10 @@ class Model:
         self.model = Sequential()
         # TODO: change model specs like input shape, ...
 
-        self.model.add(CuDNNLSTM(1, input_shape=(None, 1), return_sequences=True))
+        self.model.add(CuDNNLSTM(2500, input_shape=(None, 1), return_sequences=True))
         self.model.add(Dropout(0.2))
 
-        self.model.add(CuDNNLSTM(1))
+        self.model.add(CuDNNLSTM(2500))
         self.model.add(Dropout(0.2))
 
         self.model.add(Dense(2500, activation="relu"))
@@ -64,9 +64,9 @@ class Model:
 
         if save_every_epoch:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=10, verbose=1, callbacks=[checkpointer])
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=100, verbose=1, callbacks=[checkpointer])
         else:
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=40, verbose=1)
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=100, verbose=1)
             #self.model.fit_generator(self.dp.train_generator_test(), steps_per_epoch=500, epochs=40, verbose=1)
             self.model.save_weights(path + "weights.hdf5")
 
@@ -136,10 +136,10 @@ class Model:
         
 if __name__ == '__main__':
     model = Model()
-    #model.new_model()
+    model.new_model()
     # something wrong with retrieve v2
-    #model.train()
-    model.load_model("model-2019-08-06_17-54-15")
+    model.train(save_every_epoch=True)
+    #model.load_model("model-2019-08-06_17-54-15")
     
     model.dp.retrieve_midi_from_processed_file(model.make_song(20))
 
