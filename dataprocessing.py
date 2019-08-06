@@ -63,6 +63,70 @@ class DataProcessor():
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
 
+        def create_processed_file(self, f_path):
+        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid'):
+            # stream of notes flattened and sorted
+            m_stream = music21.converter.parse(f_path).flat.sorted
+            
+            notes = {}
+
+            # lower and upper bounds of stream
+            # below / beyond the bounds there are just rests
+            low_end = round(Decimal(str(m_stream.lowestOffset)) / self.twelfth)
+            high_end = round(Decimal(str(m_stream.highestTime)) / self.twelfth) - low_end
+
+            # initialization of the notecontainer for each step
+            for i in range(0,high_end+1):
+                notes[str(i)] = []
+
+            for note in m_stream.notes:
+                # converting both offset and duration
+                ##### this float() could make a mess #####
+                note_offset = int(round((Decimal(float(note.offset)) / self.twelfth) - low_end)) 
+                note_duration = int(round(Decimal(float(note.duration.quarterLength)) / self.twelfth))
+                
+                # every pitch in the note (or chord) gets added
+                # to the containers of each step of the duration
+                # example:
+                # C#: offset=>3.0,          duration=>0.5
+                # --> 3.0/0.0833... = 36    0.5/0.0833... = 6
+                # ---> notes["36"].append("C#"), notes["37"].append("C#"),
+                # ---> ........ notes["41"].append("C#") - end
+
+                for i in range(0, note_duration):
+                    for elem in note.pitches:
+                        print(elem)
+                        # if elem is a note with only ONE name (contrary to C# <-> D-)
+                        # then the string for the note in the regex is only that:
+                        # i.e. D4
+                        if elem.accidental == None or elem.accidental.modifier == "":
+                            notes_for_regex = elem.nameWithOctave
+                        # if elem can have two names, the note in the regex is (note1 | note2)
+                        else:
+                            notes_for_regex = "(" + elem.nameWithOctave + "|" + elem.getEnharmonic().nameWithOctave + ")"
+
+                        # if there is at least one occurance of the note elem, then it won't be added
+                        if not re.compile("[\s,\,]?" + notes_for_regex + "[\s,\,]?").search(" ".join(notes[str(note_offset + i)])):
+                            # name of the note converted to its number-representation (i.e. A0 -> 0, ..., C8-> 87)
+                            notenum = self.note_to_num(elem.simplifyEnharmonic().nameWithOctave)
+                            # if the note was already playing before -> 0
+                            # if the note is now played for the first time -> 1
+                            first_played_note = "1" if i==0 else "0"
+
+                            notes[str(note_offset + i)].append(notenum + "|" + first_played_note)
+
+            # if there is nothing in the notecontainer
+            # then only "rest" is written
+            with open(splitext(f_path)[0] + ".txt", "w") as f:
+                for i in range(0, len(notes)):
+                    if len(notes[str(i)]) == 0:
+                        f.write("r ")
+                    else:
+                        f.write(",".join(notes[str(i)]) + " ")
+            
+            return True
+        return False
+
     def train_generator_test(self):
         seq_len = 100
 
@@ -196,13 +260,7 @@ class DataProcessor():
             print("File with path '" + full_path + "' could not be loaded...")
             return None
 
-    def create_processed_file(self, f_path):
-        if self.version == 1:
-            return self.create_processed_file_v1(f_path)
-        elif self.version == 2:
-            return self.create_processed_file_v2(f_path)
-        else:
-            raise Exception("Version '" + self.version + "' does not exist...")
+    
 
     def retrieve_midi_from_processed_file(self, f_path):
         if self.version == 1:
