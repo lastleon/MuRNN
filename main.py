@@ -28,7 +28,7 @@ class Model:
         mkdir_safely("./models/")
 
         self.dp = None
-        self.data_path = "D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\"
+        self.data_path = ".\\clean_dataset\\"
         self.SEQUENCE_LENGTH = 300
         self.model = None
         
@@ -100,10 +100,10 @@ class Model:
         sequence[0][-1][0] =  random_note / len(self.dp.vocab)
         song.append(self.dp.num_to_note(random_note))
 
-        print(sequence)
+        #print(sequence)
 
         for i in range(length-1):
-            input("press any button...")
+            #input("press any button...")
             prediction = self.model.predict(sequence, batch_size=1)[0]
             
             index_of_prediction = np.where(prediction == np.amax(prediction))[0][0]
@@ -114,8 +114,8 @@ class Model:
             sequence = np.roll(sequence, -1)
             sequence[0][-1][0] = index_of_prediction / len(self.dp.vocab)
 
-            print(sequence)
-            print(index_of_prediction)
+            #print(sequence)
+            #print(index_of_prediction)
 
         mkdir_safely("./models/model-" + self.timesignature + "/songs/")
         
