@@ -61,9 +61,9 @@ class Model:
 
         if save_every_epoch:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=700, epochs=100, verbose=1, callbacks=[checkpointer])
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1, callbacks=[checkpointer])
         else:
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=700, epochs=100, verbose=1)
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1)
             #self.model.fit_generator(self.dp.train_generator_test(), steps_per_epoch=500, epochs=40, verbose=1)
             self.model.save_weights(path + "weights.hdf5")
 
