@@ -54,7 +54,7 @@ class Model:
 
         self.compile()
 
-    def train(self, save_every_epoch=False):
+    def train(self, epochs, save_every_epoch=False):
         path = "./models/model-" + self.timesignature + "/"
 
         mkdir_safely(path)
@@ -63,8 +63,11 @@ class Model:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
             self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1, callbacks=[checkpointer])
         else:
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1)
-            #self.model.fit_generator(self.dp.train_generator_test(), steps_per_epoch=500, epochs=40, verbose=1)
+            
+            for epoch in range(epochs):
+                train_data = self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH)
+                self.model.fit(train_data[0], train_data[1], batch_size=train_data[0].shape[0], epochs=epoch, verbose=2, initial_epoch=epoch)
+
             self.model.save_weights(path + "weights.hdf5")
 
         with open(path + "model.json", "w") as file:
@@ -89,7 +92,7 @@ class Model:
         self.compile()
     
     def make_song(self, length):
-        # np.set_printoptions(threshold=np.inf)
+        np.set_printoptions(threshold=np.inf)
 
         song = []
         sequence = np.ones((1, self.SEQUENCE_LENGTH, 1))
@@ -101,14 +104,15 @@ class Model:
 
         for i in range(length-1):
             #input("press any button...")
-            prediction = self.model.predict(sequence, batch_size=1)[0]
+            prediction = self.model.predict(sequence)[0]
             
             index_of_prediction = np.where(prediction == np.amax(prediction))[0][0]
             note = self.dp.num_to_note(index_of_prediction)
             
             song.append(note)
 
-            sequence = np.roll(sequence, -1)
+            sequence = np.roll(sequence, -sequence.shape[2])
+
             sequence[0][-1][0] = index_of_prediction / len(self.dp.vocab)
 
             #print(sequence)
@@ -136,9 +140,9 @@ if __name__ == '__main__':
     model.new_model()
     # something wrong with retrieve v2
     model.train()
-    #model.load_model("model-2019-08-06_17-54-15")
+    #model.load_model("model-2019-08-07_09-24-36")
     
-    model.dp.retrieve_midi_from_processed_file(model.make_song(20))
+    model.dp.retrieve_midi_from_processed_file(model.make_song(100))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
 ############# SO IT CAN RUN ON BOTH CPU AND GPU

@@ -178,7 +178,7 @@ class DataProcessor():
         #                   [C  E  D] E  A  --> sequence_length = 3
         #                   [C  E  D  E] A  --> sequence_length = 4
         #                   ...
-        # [features]        number of notes in a single timestep --> always 88 
+        # [features]        note converted to num and normalized with vocab size --> always 1
 
         ############# FAILSAFE
         # --> GPU-memory capabilities aren't exceeded
@@ -230,8 +230,74 @@ class DataProcessor():
             yield x_train, y_train
                     
                     
-    def train_generator_with_padding(self, sequence_length):
-        pass
+    def train_generator_with_padding(self, sequence_length=10):
+         #############   PRODUCED DATA:
+        #### x_train:
+        # SHAPE: (batch_size, sequence_length, features)
+        # [batch_size]      numeber of shifts in data (which is the length), example (with sequence_length=2):
+        #                   [0  E] D  E  A    // + 1
+        #                    0 [E  D] E  A    // shift 1
+        #                    0  E [D  E] A    // shift 2
+        #                    0  E  D [E  A]   // shift 3
+        #                    -----------------//--------
+        #                                          4
+        # [sequence_length] number of timesteps in a single datapoint in a batch, example:
+        #                   [C  E] D  E  A  --> sequence_length = 2
+        #                   [C  E  D] E  A  --> sequence_length = 3
+        #                   [C  E  D  E] A  --> sequence_length = 4
+        #                   ...
+        # [features]        note converted to num and normalized with vocab size --> always 1
+
+        ############# FAILSAFE
+        # --> description in train_generator_no_padding
+
+        LIMIT = 200
+
+        remainder = []
+
+        while True:
+            if len(remainder) == 0:
+                filename = splitext(random.choice(self.files))[0]
+                #music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
+                music_data = self.load_processed_file(join(self.dir_path, "megalovania" + ".mu"))
+
+                # batch_size is number of shifts of the training data array
+                batch_size = len(music_data)
+
+                x_train = np.ones((batch_size, sequence_length, 1)) # shape of training data is (batch_size, timesteps, features)
+                y_train = np.zeros((batch_size, len(self.vocab)))
+
+                for i in range(batch_size):
+                    # shift batches in x_train one step to the left
+                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    # add new note
+                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i])) / float(len(self.vocab))
+
+                    if i != batch_size-1:
+                        y_train[i][self.note_to_num(music_data[i+1])] = 1.0
+
+                    """
+                    for j in range(sequence_length):
+                        note = music_data[i+j]    
+                        # numerical representation of note/chord, normalized
+                        x_train[i][j][0] = float(self.note_to_num(note)) / float(len(self.vocab))
+
+                    if i == batch_size-1:
+                        y_train[i] = np.zeros(len(self.vocab))
+                    else:
+                        note = music_data[i+sequence_length]
+                        y_train[i][self.note_to_num(note)] = 1.0
+                    """
+                
+                if batch_size > LIMIT:
+                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/LIMIT))))
+                    x_train, y_train = remainder.pop()
+
+            else:
+                x_train, y_train = remainder.pop()
+                
+            yield x_train, y_train
 
     # assumes the vec is really one hot encoded (i.e. in this case 0, .5, 1.0)
     def one_hot_vec_to_string(self, vec):

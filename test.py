@@ -4,7 +4,7 @@ import music21
 import numpy as np
 #import tensorflow as tf
 
-#d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
+d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
 
 #d.make_conversion_dictionaries()
 #print(len(d.get_vocab()))
@@ -30,7 +30,15 @@ bruh = np.roll(bruh, -4)
 print(bruh)
 
 """
-#np.set_printoptions(threshold=np.inf)
+np.set_printoptions(threshold=np.inf)
+print(next(d.train_generator_with_padding())[0])
+
+#### wait a fuckin sec
+
+
+
+
+
 
 #print(next(d.train_generator_no_padding(sequence_length=2))[0])
 
