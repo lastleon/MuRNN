@@ -3,6 +3,7 @@ import datetime
 from tensorflow.keras.models import Sequential, model_from_json
 from tensorflow.keras.layers import Dense, CuDNNLSTM, LSTM, Dropout
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.callbacks import TensorBoard
 
 import json
 import numpy as np
@@ -11,6 +12,8 @@ from dataprocessing import DataProcessor
 import pickle
 import random
 
+import matplotlib.pyplot as plt
+
 
 def get_datetime_str():
     return '{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
@@ -18,6 +21,15 @@ def get_datetime_str():
 def mkdir_safely(path):
     if not os.path.exists(path):
         os.mkdir(path)
+
+def max(array):
+    curr_index = -1
+    curr_value = -np.inf
+    for i in range(len(array)):
+        if array[i] > curr_value:
+            curr_index = i
+            curr_value = array[i]
+    return (curr_index, curr_value)
 
 
 
@@ -28,8 +40,8 @@ class Model:
         mkdir_safely("./models/")
 
         self.dp = None
-        self.data_path = ".\\clean_dataset\\"
-        self.SEQUENCE_LENGTH = 200
+        self.data_path = ".\\test_dataset\\"
+        self.SEQUENCE_LENGTH = 30
         self.model = None
         
         self.timesignature = get_datetime_str()
@@ -54,19 +66,19 @@ class Model:
 
         self.compile()
 
-    def train(self, epochs, save_every_epoch=False):
+    def train(self, save_every_epoch=False):
         path = "./models/model-" + self.timesignature + "/"
 
         mkdir_safely(path)
 
+        tensorboard = TensorBoard(log_dir=path+"logs", write_grads=True)
+
         if save_every_epoch:
             checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1, callbacks=[checkpointer])
+            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1, callbacks=[tensorboard, checkpointer])
         else:
             
-            for epoch in range(epochs):
-                train_data = self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH)
-                self.model.fit(train_data[0], train_data[1], batch_size=train_data[0].shape[0], epochs=epoch, verbose=2, initial_epoch=epoch)
+            self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=[tensorboard])
 
             self.model.save_weights(path + "weights.hdf5")
 
@@ -100,8 +112,6 @@ class Model:
         sequence[0][-1][0] =  random_note / len(self.dp.vocab)
         song.append(self.dp.num_to_note(random_note))
 
-        #print(sequence)
-
         for i in range(length-1):
             #input("press any button...")
             prediction = self.model.predict(sequence)[0]
@@ -129,20 +139,19 @@ class Model:
         
     
     def compile(self):
-        optimizer = tf.keras.optimizers.SGD(lr=0.01, momentum=0.001)
+        optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
 
         self.model.compile(loss="categorical_crossentropy",
-            optimizer="adam",
+            optimizer=optimizer,
             metrics=["accuracy"])
         
 if __name__ == '__main__':
     model = Model()
-    model.new_model()
+    #model.new_model()
     # something wrong with retrieve v2
-    model.train()
-    #model.load_model("model-2019-08-07_09-24-36")
-    
-    model.dp.retrieve_midi_from_processed_file(model.make_song(100))
+    #model.train()
+    model.load_model("model-2019-08-16_10-20-51")
+    #model.dp.retrieve_midi_from_processed_file(model.make_song(300))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
 ############# SO IT CAN RUN ON BOTH CPU AND GPU

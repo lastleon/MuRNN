@@ -251,15 +251,15 @@ class DataProcessor():
         ############# FAILSAFE
         # --> description in train_generator_no_padding
 
-        LIMIT = 200
+        LIMIT = 350
 
         remainder = []
 
         while True:
             if len(remainder) == 0:
                 filename = splitext(random.choice(self.files))[0]
-                #music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
-                music_data = self.load_processed_file(join(self.dir_path, "megalovania" + ".mu"))
+                music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
+                #music_data = self.load_processed_file(join(self.dir_path, "megalovania" + ".mu"))
 
                 # batch_size is number of shifts of the training data array
                 batch_size = len(music_data)
@@ -352,6 +352,8 @@ class DataProcessor():
                     note.duration = music21.duration.Duration(duration)
                     stream.append(note)
                 stream.write('midi', fp=(splitext(f_path)[0]+"-retrieved.midi"))
+        else:
+            print("File with path '" + f_path + "' could not be retrieved...")
 
     
     """

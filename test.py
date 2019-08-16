@@ -2,9 +2,10 @@ from dataprocessing import DataProcessor
 from decimal import Decimal
 import music21
 import numpy as np
+import matplotlib.pyplot as plt
 #import tensorflow as tf
 
-d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
+d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\NN\\test_dataset\\")
 
 #d.make_conversion_dictionaries()
 #print(len(d.get_vocab()))
@@ -15,7 +16,7 @@ d = DataProcessor("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\")
 
 #print(d.load_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\NN\\models\\model-2019-08-06_17-54-15\\songs\\song-2019-08-06_18-46-29.mu"))
 
-#d.retrieve_midi_from_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\test_v2\\megalovania.mu")
+d.retrieve_midi_from_processed_file("D:\\leont\\Documents\\Schule\\W-Seminar\\NN\\test_dataset\\appass_2.mu")
 
 #print(next(d.train_generator())[1].shape)
 
@@ -30,9 +31,10 @@ bruh = np.roll(bruh, -4)
 print(bruh)
 
 """
-np.set_printoptions(threshold=np.inf)
-print(next(d.train_generator_with_padding())[0])
-
+#np.set_printoptions(threshold=np.inf)
+#print(next(d.train_generator_with_padding())[0])
+#plt.hist([1,2,4,8,4,2,1])
+#plt.show()
 #### wait a fuckin sec
 
 
