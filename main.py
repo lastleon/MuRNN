@@ -1,35 +1,27 @@
 import tensorflow as tf
-import datetime
 from tensorflow.keras.models import Sequential, model_from_json
-from tensorflow.keras.layers import Dense, CuDNNLSTM, LSTM, Dropout
-from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.layers import Dense, CuDNNLSTM, Dropout
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 
-import json
+import datetime
 import numpy as np
-import os
-from dataprocessing import DataProcessor
-import pickle
 import random
 
-import matplotlib.pyplot as plt
+import json
+import pickle
+from os import mkdir
+from os.path import exists
+from dataprocessing import DataProcessor
 
+### helper functions
 
 def get_datetime_str():
     return '{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
 
 def mkdir_safely(path):
-    if not os.path.exists(path):
+    if not exists(path):
         os.mkdir(path)
 
-def max(array):
-    curr_index = -1
-    curr_value = -np.inf
-    for i in range(len(array)):
-        if array[i] > curr_value:
-            curr_index = i
-            curr_value = array[i]
-    return (curr_index, curr_value)
 
 
 
@@ -41,11 +33,13 @@ class Model:
 
         self.dp = None
         self.data_path = data_dir
-        self.SEQUENCE_LENGTH = 50
-        self.model = None
         
-        self.timesignature = get_datetime_str()
+        self.model = None
         self.model_path = None
+        self.SEQUENCE_LENGTH = 50
+
+        self.timesignature = get_datetime_str()
+        
     
     def new_model(self):
         # make new model directory
@@ -54,6 +48,7 @@ class Model:
 
         self.dp = DataProcessor(self.data_path)
 
+        # make model
         self.model = Sequential()
 
         self.model.add(CuDNNLSTM(500, input_shape=(None, 1), return_sequences=False))
@@ -65,7 +60,6 @@ class Model:
         self.model.add(Dense(len(self.dp.vocab), activation="softmax"))
 
         print(self.model.summary(90))
-
 
         self.compile()
 
@@ -88,7 +82,6 @@ class Model:
             file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
                        '"TIMESIGNATURE" : "' + self.timesignature + '" }')
 
-    # path to directory
     def load_model(self, model_dir_name, weights_filename="weights.hdf5"):
 
         self.model_path = "./models/" + model_dir_name + "/"
@@ -122,7 +115,6 @@ class Model:
         song.append(self.dp.num_to_note(random_note))
 
         for i in range(length-1):
-            #input("press any button...")
             prediction = self.model.predict(sequence)[0]
             
             index_of_prediction = np.where(prediction == np.amax(prediction))[0][0]
@@ -133,9 +125,6 @@ class Model:
             sequence = np.roll(sequence, -sequence.shape[2])
 
             sequence[0][-1][0] = index_of_prediction / len(self.dp.vocab)
-
-            #print(sequence)
-            #print(index_of_prediction)
 
         mkdir_safely(self.model_path + "songs/")
         
@@ -153,14 +142,12 @@ class Model:
         self.model.compile(loss="categorical_crossentropy",
             optimizer=optimizer,
             metrics=["accuracy"])
-        
+
+
 if __name__ == '__main__':
     model = Model(".\\test_dataset\\")
-    model.new_model()
-    # something wrong with retrieve v2
-    model.train()
-    #model.load_model("bruh")
-    model.dp.retrieve_midi_from_processed_file(model.make_song(300))
 
-############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
-############# SO IT CAN RUN ON BOTH CPU AND GPU
+    model.new_model()
+    model.train()
+
+    model.dp.retrieve_midi_from_processed_file(model.make_song(300))
