@@ -41,12 +41,16 @@ class Model:
 
         self.dp = None
         self.data_path = data_dir
-        self.SEQUENCE_LENGTH = 30
+        self.SEQUENCE_LENGTH = 50
         self.model = None
         
         self.timesignature = get_datetime_str()
+        self.model_path = None
     
     def new_model(self):
+        # make new model directory
+        self.model_path = "./models/model-" + self.timesignature + "/"
+        mkdir_safely(self.model_path)
 
         self.dp = DataProcessor(self.data_path)
 
@@ -66,36 +70,33 @@ class Model:
         self.compile()
 
     def train(self, save_every_epoch=False):
-        path = "./models/model-" + self.timesignature + "/"
 
-        mkdir_safely(path)
-
-        tensorboard = TensorBoard(log_dir=path + "logs", write_grads=True, write_images=True)
+        tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
 
         callbacks = [tensorboard]
 
         if save_every_epoch:
-            checkpointer = ModelCheckpoint(path + "weights-{epoch:02d}.hdf5", save_weights_only=True)
+            checkpointer = ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True)
             callbacks.append(checkpointer)
 
-        #self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=callbacks)
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1, epochs=2, verbose=1, callbacks=callbacks)
-        self.model.save_weights(path + "weights.hdf5")
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=callbacks)
+        self.model.save_weights(self.model_path + "weights.hdf5")
 
-        with open(path + "model.json", "w") as file:
+        with open(self.model_path + "model.json", "w") as file:
             file.write(self.model.to_json())
-        with open(path + "variables.json", "w") as file:
+        with open(self.model_path + "variables.json", "w") as file:
             file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
                        '"TIMESIGNATURE" : "' + self.timesignature + '" }')
 
     # path to directory
-    def load_model(self, model_dir, weights_filename="weights.hdf5"):
+    def load_model(self, model_dir_name, weights_filename="weights.hdf5"):
 
-        path = "./models/" + model_dir + "/"
-        with open(path + "model.json", "r") as model_json:
+        self.model_path = "./models/" + model_dir_name + "/"
+
+        with open(self.model_path + "model.json", "r") as model_json:
             self.model = model_from_json(model_json.read())
 
-        with open(path + "variables.json", "r") as variable_json:
+        with open(self.model_path + "variables.json", "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
 
@@ -103,11 +104,11 @@ class Model:
                 self.timesignature = variables["TIMESIGNATURE"]
             else:
                 # for backwards-compatibility
-                self.timesignature = model_dir.replace("model-","")
+                self.timesignature = model_dir_name.replace("model-","")
             
             self.dp = DataProcessor(self.data_path)
 
-        self.model.load_weights(path + weights_filename)
+        self.model.load_weights(self.model_path + weights_filename)
 
         self.compile()
     
@@ -136,9 +137,9 @@ class Model:
             #print(sequence)
             #print(index_of_prediction)
 
-        mkdir_safely("./models/model-" + self.timesignature + "/songs/")
+        mkdir_safely(self.model_path + "songs/")
         
-        songpath = "./models/model-" + self.timesignature + "/songs/song-" + get_datetime_str() + ".mu"
+        songpath = self.model_path + "songs/song-" + get_datetime_str() + ".mu"
 
         with open(songpath, "wb") as f:
             pickle.dump(song, f)
@@ -158,7 +159,7 @@ if __name__ == '__main__':
     model.new_model()
     # something wrong with retrieve v2
     model.train()
-    #model.load_model("model-2019-08-16_10-20-51")
+    #model.load_model("bruh")
     model.dp.retrieve_midi_from_processed_file(model.make_song(300))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
