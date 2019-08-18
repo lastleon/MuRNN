@@ -61,6 +61,7 @@ class DataProcessor():
         else:
             self.files = files
             self.vocab = self.get_vocab()
+            print("Vocab size: " + str(len(self.vocab)))
             self.notes_to_num_dict, self.num_to_notes_dict = self.make_conversion_dictionaries()
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")

@@ -35,12 +35,12 @@ def max(array):
 
 class Model:
     
-    def __init__(self):
+    def __init__(self, data_dir):
         
         mkdir_safely("./models/")
 
         self.dp = None
-        self.data_path = ".\\test_dataset\\"
+        self.data_path = data_dir
         self.SEQUENCE_LENGTH = 30
         self.model = None
         
@@ -51,7 +51,6 @@ class Model:
         self.dp = DataProcessor(self.data_path)
 
         self.model = Sequential()
-        # TODO: change model specs like input shape, ...
 
         self.model.add(CuDNNLSTM(500, input_shape=(None, 1), return_sequences=False))
         self.model.add(Dropout(0.2))
@@ -71,24 +70,26 @@ class Model:
 
         mkdir_safely(path)
 
-        tensorboard = TensorBoard(log_dir=path+"logs", write_grads=True)
+        tensorboard = TensorBoard(log_dir=path + "logs", write_grads=True, write_images=True)
+
+        callbacks = [tensorboard]
 
         if save_every_epoch:
-            checkpointer = ModelCheckpoint(path + "weights.hdf5")
-            self.model.fit_generator(self.dp.train_generator_no_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1500, epochs=200, verbose=1, callbacks=[tensorboard, checkpointer])
-        else:
-            
-            self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=[tensorboard])
+            checkpointer = ModelCheckpoint(path + "weights-{epoch:02d}.hdf5", save_weights_only=True)
+            callbacks.append(checkpointer)
 
-            self.model.save_weights(path + "weights.hdf5")
+        #self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=callbacks)
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=1, epochs=2, verbose=1, callbacks=callbacks)
+        self.model.save_weights(path + "weights.hdf5")
 
         with open(path + "model.json", "w") as file:
             file.write(self.model.to_json())
         with open(path + "variables.json", "w") as file:
-            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ' }')
+            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
+                       '"TIMESIGNATURE" : "' + self.timesignature + '" }')
 
     # path to directory
-    def load_model(self, model_dir):
+    def load_model(self, model_dir, weights_filename="weights.hdf5"):
 
         path = "./models/" + model_dir + "/"
         with open(path + "model.json", "r") as model_json:
@@ -97,9 +98,16 @@ class Model:
         with open(path + "variables.json", "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
+
+            if "TIMESIGNATURE" in variables.keys():
+                self.timesignature = variables["TIMESIGNATURE"]
+            else:
+                # for backwards-compatibility
+                self.timesignature = model_dir.replace("model-","")
+            
             self.dp = DataProcessor(self.data_path)
-        self.model.load_weights(path + "weights.hdf5")
-        self.timesignature = model_dir.replace("model-", "")
+
+        self.model.load_weights(path + weights_filename)
 
         self.compile()
     
@@ -146,12 +154,12 @@ class Model:
             metrics=["accuracy"])
         
 if __name__ == '__main__':
-    model = Model()
-    #model.new_model()
+    model = Model(".\\test_dataset\\")
+    model.new_model()
     # something wrong with retrieve v2
-    #model.train()
-    model.load_model("model-2019-08-16_10-20-51")
-    #model.dp.retrieve_midi_from_processed_file(model.make_song(300))
+    model.train()
+    #model.load_model("model-2019-08-16_10-20-51")
+    model.dp.retrieve_midi_from_processed_file(model.make_song(300))
 
 ############# MODEL HAS TO BE TRANSFORMED AFTER TRAINING,
 ############# SO IT CAN RUN ON BOTH CPU AND GPU
