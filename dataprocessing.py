@@ -13,6 +13,8 @@ class DataProcessor():
 
     def __init__(self, dir_path):
 
+        self.twelfth = Decimal("0.08333333333333333333") # 1/12
+
         # check if path to directory is valid
         if isdir(dir_path):
             self.dir_path = dir_path
@@ -56,8 +58,19 @@ class DataProcessor():
             raise FileNotFoundError("There are no fitting files in this directory...")
         else:
             self.files = files
-            self.vocab = self.get_vocab()
-            self.notes_to_num_dict, self.num_to_notes_dict = self.make_conversion_dictionaries()
+
+            self.note_vocab, self.duration_vocab, self.offset_vocab = self.get_vocab()
+
+            # NOTE
+            self.notes_to_num_dict, self.num_to_notes_dict = self.make_note_conversion_dictionaries()
+            # DURATION
+            self.durations_to_num_dict, self.num_to_durations_dict = self.make_duration_conversion_dictionaries()
+            # OFFSET
+            self.offsets_to_num_dict, self.num_to_offsets_dict = self.make_offset_conversion_dictionaries()
+            
+            print("Note vocab: " + str(len(self.note_vocab)) + "  Duration vocab: " + str(len(self.duration_vocab))
+                + "  Offset vocab: " + str(len(self.offset_vocab)) 
+                + "  TOTAL: " + str(len(self.note_vocab)+len(self.duration_vocab)+len(self.offset_vocab)))
             print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
     
@@ -71,12 +84,16 @@ class DataProcessor():
         if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid') and not splitext(f_path)[0].endswith("retrieved"):
             # stream of notes flattened and sorted
             m_stream = music21.converter.parse(f_path).flat.sorted
-            
             notes = []
 
-            for note in m_stream.notes:
+            previous_offset = 0.0
 
-                note_duration = note.duration.quarterLength
+            for note in m_stream.notes:
+                
+                note_duration = float(self.quarterLength_to_int_representation(str(note.duration.quarterLength)))
+
+                note_offset = float(self.quarterLength_to_int_representation(str(note.offset)) - previous_offset)
+                previous_offset = float(self.quarterLength_to_int_representation(str(note.offset)))
                     
                 pitches = note.pitches
                 pitch_names = []
@@ -93,15 +110,20 @@ class DataProcessor():
                 
                 pitch_names.sort()
                 pitch_name_string = ",".join(pitch_names)
-                notes.append(pitch_name_string + " " + str(note_duration))
-
+            
+                notes.append((pitch_name_string, note_duration, note_offset))
+            
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)
             return True
         return False
 
     def train_generator_no_padding(self, sequence_length=10):
+        print(
+        """
+            DO NOT USE THIS, THIS DOES NOT WORK YET
 
+        """)
         #############   PRODUCED DATA:
         #### x_train:
         # SHAPE: (batch_size, sequence_length, features)
@@ -235,27 +257,39 @@ class DataProcessor():
                 # ]
                 # ---> probability of a note
                 
-                x_train = np.ones((batch_size, sequence_length, 1))
-                y_train = np.zeros((batch_size, len(self.vocab)))
+                x_train = np.ones((batch_size, sequence_length, 3))
+
+                y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
+                y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
+                y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
 
                 for i in range(batch_size):
                     # shift batches in x_train one step to the left
                     x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
-                    # add new note
+                    # add new note/duration/offset
                     x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
-                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i])) / float(len(self.vocab))
+
+                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
+                    x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
+                    x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
 
                     if i != batch_size-1:
-                        y_train[i][self.note_to_num(music_data[i+1])] = 1.0
+                        y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
+                        y_train_duration[i][self.duration_to_num(music_data[i+1][1])] = 1.0
+                        y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
                 
                 if batch_size > LIMIT:
-                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/LIMIT))))
-                    x_train, y_train = remainder.pop()
+                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), 
+                                         np.array_split(y_train_notes, np.ceil(len(y_train_notes)/LIMIT)),
+                                         np.array_split(y_train_duration, np.ceil(len(y_train_duration)/LIMIT)),
+                                         np.array_split(y_train_offset, np.ceil(len(y_train_offset)/LIMIT))))
+                    
+                    x_train, y_train_notes, y_train_duration, y_train_offset = remainder.pop()
 
             else:
-                x_train, y_train = remainder.pop()
+                x_train, y_train_notes, y_train_duration, y_train_offset = remainder.pop()
                 
-            yield x_train, y_train
+            yield [x_train], [y_train_notes, y_train_duration, y_train_offset]
 
     # STRUCTURE OF THE LOADED FILE
     # --> see create_processed_file
@@ -272,27 +306,31 @@ class DataProcessor():
             with open(f_path, "rb") as f:
                 data = pickle.load(f)
                 stream = music21.stream.Stream()
-                for datapoint in data:
-                    pitch, duration = datapoint.split(" ")
+                curr_offset = 0.0
+                for tup in data:
+                    pitch, duration, offset = tup
                     
-                    if len(duration.split("/")) > 1:
-                        duration = float(Decimal(duration.split("/")[0]) / Decimal(duration.split("/")[1]))
-                    else:
-                        duration = float(duration)
+                    duration = self.int_representation_to_quarterLength(float(duration))
+                    
+                    offset = self.int_representation_to_quarterLength(float(offset))
+
+                    curr_offset += offset
 
                     if "," in pitch:
                         note = music21.chord.Chord(pitch.split(","))
                     else:
                         note = music21.note.Note(pitch)
                     note.duration = music21.duration.Duration(duration)
-                    stream.append(note)
+
+                    stream.insert(curr_offset, note, ignoreSort=True)
                 stream.write('midi', fp=(splitext(f_path)[0]+"-retrieved.midi"))
         else:
             print("File with path '" + f_path + "' could not be retrieved...")
 
-    def make_conversion_dictionaries(self):
-        notes_to_num = dict((note,num) for num,note in enumerate(self.vocab))
-        num_to_notes = dict((num,note) for num,note in enumerate(self.vocab))
+    ### NOTE
+    def make_note_conversion_dictionaries(self):
+        notes_to_num = dict((note,num) for num,note in enumerate(self.note_vocab))
+        num_to_notes = dict((num,note) for num,note in enumerate(self.note_vocab))
 
         return notes_to_num, num_to_notes
 
@@ -303,12 +341,59 @@ class DataProcessor():
     def num_to_note(self, num):
         return self.num_to_notes_dict[num]
 
+    ### DURATION
+    def make_duration_conversion_dictionaries(self):
+        durations_to_num = dict((duration,num) for num,duration in enumerate(self.duration_vocab))
+        num_to_durations = dict((num,duration) for num,duration in enumerate(self.duration_vocab))
+
+        return durations_to_num, num_to_durations
+
+    # shortcut to convert from duration to number
+    def duration_to_num(self, duration):
+        return self.durations_to_num_dict[duration]
+    # shortcut to convert from number to duration
+    def num_to_duration(self, num):
+        return self.num_to_durations_dict[num]
+    
+    ### OFFSET
+    def make_offset_conversion_dictionaries(self):
+        offsets_to_num = dict((offset,num) for num,offset in enumerate(self.offset_vocab))
+        num_to_offsets = dict((num,offset) for num,offset in enumerate(self.offset_vocab))
+
+        return offsets_to_num, num_to_offsets
+    
+    # shortcut to convert from offset to number
+    def offset_to_num(self, offset):
+        return self.offsets_to_num_dict[offset]
+    # shortcut to convert from number to offset
+    def num_to_offset(self, num):
+        return self.num_to_offsets_dict[num]
+    
     def get_vocab(self):
-        vocab = set()
+        note_vocab = set()
+        duration_vocab = set()
+        offset_vocab = set()
+
         for file in glob.glob(self.dir_path + "*.mu"):
             with open(file, "rb") as f:
                 data = pickle.load(f)
-                for note in data:
-                    vocab.add(note)
+                for tup in data:
+                    note_vocab.add(tup[0])
+                    duration_vocab.add(tup[1])
+                    offset_vocab.add(tup[2])
         
-        return tuple(vocab)
+        return tuple(note_vocab), tuple(duration_vocab), tuple(offset_vocab)
+    
+    # convert int represented quarterLengths back
+    def int_representation_to_quarterLength(self, value):
+        return float(Decimal(value) * self.twelfth)
+
+    # convert quarterLengths to integer representation
+    def quarterLength_to_int_representation(self, value):
+        # this will always return integers values, but as floats
+        if len(value.split("/")) > 1:
+            return round(float(((Decimal(value.split("/")[0]) / Decimal(value.split("/")[1])) / self.twelfth)))
+        else:
+            return round(float(Decimal(value) / self.twelfth))
+
+    

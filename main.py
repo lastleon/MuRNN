@@ -1,6 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras.models import Sequential, model_from_json
-from tensorflow.keras.layers import Dense, CuDNNLSTM, Dropout
+from tensorflow.keras.models import Model, model_from_json
+from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 
 import datetime
@@ -20,12 +20,19 @@ def get_datetime_str():
 
 def mkdir_safely(path):
     if not exists(path):
-        os.mkdir(path)
+        mkdir(path)
+
+def max(array):
+    curr_index = -1
+    curr_value = -np.inf
+    for i in range(len(array)):
+        if array[i] > curr_value:
+            curr_index = i
+            curr_value = array[i]
+    return curr_index, curr_value
 
 
-
-
-class Model:
+class MuRNN:
     
     def __init__(self, data_dir):
         
@@ -49,6 +56,19 @@ class Model:
         self.dp = DataProcessor(self.data_path)
 
         # make model
+        data_input = Input(batch_shape=(None, None, 3), name="input")
+
+        x = CuDNNLSTM(500, return_sequences=False)(data_input)
+        x = Dropout(0.2)(x)
+        
+        note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
+        duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
+        offset_picker = Dense(len(self.dp.offset_vocab), activation="softmax", name="offset_output")(x)
+
+        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker])
+        self.compile()
+
+        """
         self.model = Sequential()
 
         self.model.add(CuDNNLSTM(500, input_shape=(None, 1), return_sequences=False))
@@ -58,13 +78,20 @@ class Model:
         self.model.add(Dropout(0.2))
 
         self.model.add(Dense(len(self.dp.vocab), activation="softmax"))
-
+        
         print(self.model.summary(90))
-
+        
         self.compile()
+        """
 
     def train(self, save_every_epoch=False):
 
+        with open(self.model_path + "model.json", "w") as file:
+            file.write(self.model.to_json())
+        with open(self.model_path + "variables.json", "w") as file:
+            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
+                       '"TIMESIGNATURE" : "' + self.timesignature + '" }')
+        
         tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
 
         callbacks = [tensorboard]
@@ -73,14 +100,9 @@ class Model:
             checkpointer = ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True)
             callbacks.append(checkpointer)
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=25, verbose=1, callbacks=callbacks)
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=20, verbose=1, callbacks=callbacks)
         self.model.save_weights(self.model_path + "weights.hdf5")
 
-        with open(self.model_path + "model.json", "w") as file:
-            file.write(self.model.to_json())
-        with open(self.model_path + "variables.json", "w") as file:
-            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
-                       '"TIMESIGNATURE" : "' + self.timesignature + '" }')
 
     def load_model(self, model_dir_name, weights_filename="weights.hdf5"):
 
@@ -109,22 +131,33 @@ class Model:
         np.set_printoptions(threshold=np.inf)
 
         song = []
-        sequence = np.ones((1, self.SEQUENCE_LENGTH, 1))
-        random_note = random.randint(0, len(self.dp.vocab))
-        sequence[0][-1][0] =  random_note / len(self.dp.vocab)
-        song.append(self.dp.num_to_note(random_note))
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 3))
+
+        random_note = random.randrange(0, len(self.dp.note_vocab))
+        sequence[0][-1][0] =  float(random_note) / float(len(self.dp.note_vocab))
+
+        random_duration = random.randrange(0, len(self.dp.duration_vocab))
+        sequence[0][-1][1] =  float(random_duration) / float(len(self.dp.duration_vocab))
+
+        random_offset = random.randrange(0, len(self.dp.offset_vocab))
+        sequence[0][-1][2] =  float(random_offset) / float(len(self.dp.offset_vocab))
+
+        song.append((self.dp.num_to_note(random_note), self.dp.num_to_duration(random_duration), self.dp.num_to_offset(random_offset)))
 
         for i in range(length-1):
-            prediction = self.model.predict(sequence)[0]
+            note_prediction, duration_prediction, offset_prediction = self.model.predict(sequence)
+
+            note_index = max(note_prediction[0])[0]
+            duration_index = max(duration_prediction[0])[0]
+            offset_index = max(offset_prediction[0])[0]
             
-            index_of_prediction = np.where(prediction == np.amax(prediction))[0][0]
-            note = self.dp.num_to_note(index_of_prediction)
-            
-            song.append(note)
+            song.append((self.dp.num_to_note(note_index), self.dp.num_to_duration(duration_index), self.dp.num_to_offset(offset_index)))
 
             sequence = np.roll(sequence, -sequence.shape[2])
 
-            sequence[0][-1][0] = index_of_prediction / len(self.dp.vocab)
+            sequence[0][-1][0] = note_index / len(self.dp.note_vocab)
+            sequence[0][-1][1] = duration_index / len(self.dp.duration_vocab)
+            sequence[0][-1][2] = offset_index / len(self.dp.offset_vocab)
 
         mkdir_safely(self.model_path + "songs/")
         
@@ -145,9 +178,11 @@ class Model:
 
 
 if __name__ == '__main__':
-    model = Model(".\\test_dataset\\")
+    model = MuRNN("./test_dataset/")
 
-    model.new_model()
-    model.train()
+    #model.new_model()
+    #model.train(save_every_epoch=True)
 
-    model.dp.retrieve_midi_from_processed_file(model.make_song(300))
+    model.load_model("model-2019-08-19_09-41-32")
+
+    model.dp.retrieve_midi_from_processed_file(model.make_song(400))
