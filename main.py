@@ -1,7 +1,11 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
 from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+
+from tensorboard import default
+from tensorboard import program
+import logging
 
 import datetime
 import numpy as np
@@ -9,7 +13,7 @@ import random
 
 import json
 import pickle
-from os import mkdir
+from os import mkdir, system
 from os.path import exists
 from dataprocessing import DataProcessor
 
@@ -43,7 +47,7 @@ class MuRNN:
         
         self.model = None
         self.model_path = None
-        self.SEQUENCE_LENGTH = 50
+        self.SEQUENCE_LENGTH = 70
 
         self.timesignature = get_datetime_str()
         
@@ -58,9 +62,12 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(500, return_sequences=False)(data_input)
+        x = CuDNNLSTM(1500, return_sequences=True)(data_input)
         x = Dropout(0.2)(x)
         
+        x = CuDNNLSTM(1500, return_sequences=False)(x)
+        x = Dropout(0.2)(x)
+
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
         duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
         offset_picker = Dense(len(self.dp.offset_vocab), activation="softmax", name="offset_output")(x)
@@ -68,23 +75,7 @@ class MuRNN:
         self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker])
         self.compile()
 
-        """
-        self.model = Sequential()
-
-        self.model.add(CuDNNLSTM(500, input_shape=(None, 1), return_sequences=False))
-        self.model.add(Dropout(0.2))
-
-        self.model.add(Dense(1500, activation="relu"))
-        self.model.add(Dropout(0.2))
-
-        self.model.add(Dense(len(self.dp.vocab), activation="softmax"))
-        
-        print(self.model.summary(90))
-        
-        self.compile()
-        """
-
-    def train(self, save_every_epoch=False):
+    def train(self, save_every_epoch=False, run_tensorboard_server=False):
 
         with open(self.model_path + "model.json", "w") as file:
             file.write(self.model.to_json())
@@ -93,14 +84,18 @@ class MuRNN:
                        '"TIMESIGNATURE" : "' + self.timesignature + '" }')
         
         tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
+        early_stopping = EarlyStopping(min_delta=0.0002, patience=5)
 
-        callbacks = [tensorboard]
+        callbacks = [tensorboard, early_stopping]
 
         if save_every_epoch:
             checkpointer = ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True)
             callbacks.append(checkpointer)
+        
+        if run_tensorboard_server:
+            self.start_tensorboard()
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=500, epochs=20, verbose=1, callbacks=callbacks)
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=50, verbose=1, callbacks=callbacks)
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 
@@ -176,13 +171,17 @@ class MuRNN:
             optimizer=optimizer,
             metrics=["accuracy"])
 
+    def start_tensorboard(self):
+        log = logging.getLogger("werkzeug").setLevel(logging.ERROR)
+        tb = program.TensorBoard(default.get_plugins())
+        tb.configure(argv=[None, "--logdir", self.model_path + "logs/"])
+        url = tb.launch()
+        print('\nTensorBoard at %s \n' % url)
 
 if __name__ == '__main__':
-    model = MuRNN("./test_dataset/")
 
-    #model.new_model()
-    #model.train(save_every_epoch=True)
+    model = MuRNN("./classical_music_dataset/")
 
-    model.load_model("model-2019-08-19_09-41-32")
-
-    model.dp.retrieve_midi_from_processed_file(model.make_song(400))
+    model.new_model()
+        
+    model.train(save_every_epoch=True, run_tensorboard_server=True)
