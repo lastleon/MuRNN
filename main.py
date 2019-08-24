@@ -17,6 +17,8 @@ from os import mkdir, system
 from os.path import exists
 from dataprocessing import DataProcessor
 
+import argparse
+
 ### helper functions
 
 def get_datetime_str():
@@ -62,10 +64,7 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(1000, return_sequences=True)(data_input)
-        x = Dropout(0.2)(x)
-        
-        x = CuDNNLSTM(1000, return_sequences=False)(x)
+        x = CuDNNLSTM(1000, return_sequences=False)(data_input)
         x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -75,7 +74,7 @@ class MuRNN:
         self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker])
         self.compile()
 
-    def train(self, save_every_epoch=False, run_tensorboard_server=False):
+    def train(self, steps_per_epoch, epochs, save_every_epoch=False, run_tensorboard_server=False):
 
         with open(self.model_path + "model.json", "w") as file:
             file.write(self.model.to_json())
@@ -95,7 +94,7 @@ class MuRNN:
         if run_tensorboard_server:
             self.start_tensorboard()
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=2000, epochs=50, verbose=1, callbacks=callbacks)
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=steps_per_epoch, epochs=epochs, verbose=1, callbacks=callbacks)
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 
@@ -179,12 +178,29 @@ class MuRNN:
         print('\nTensorBoard at %s \n' % url)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog="MuRNN")
+    parser.add_argument("dataset_directory",
+                        help="The path to the dataset on which the model should be trained")
+    parser.add_argument("steps_per_epoch",
+                        type=int, 
+                        help="The number of steps in each epoch of training")
+    parser.add_argument("epochs",
+                        type=int,
+                        help="The number of training epochs")
+    parser.add_argument("--run_tensorboard",
+                        action="store_true",
+                        help="Use this flag to run a tensorboard server on port 6006")
+    parser.add_argument("--save_every_epoch",
+                        action="store_true",
+                        help="Use this flag to save the weights of the model for each epoch")
+    
+    args = parser.parse_args()
 
-    model = MuRNN("./classical_music_dataset/")
+    model = MuRNN(args.dataset_directory)
 
     model.new_model()
         
-    model.train(save_every_epoch=True, run_tensorboard_server=True)
+    model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
 
 """
     TEMP DISCLAIMER:
