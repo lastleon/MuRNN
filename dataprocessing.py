@@ -229,7 +229,7 @@ class DataProcessor():
         ############# FAILSAFE
         # --> description in train_generator_no_padding
 
-        LIMIT = 3000
+        LIMIT = 1000
 
         remainder = []
 

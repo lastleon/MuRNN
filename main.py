@@ -62,10 +62,10 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(1500, return_sequences=True)(data_input)
+        x = CuDNNLSTM(1000, return_sequences=True)(data_input)
         x = Dropout(0.2)(x)
         
-        x = CuDNNLSTM(1500, return_sequences=False)(x)
+        x = CuDNNLSTM(1000, return_sequences=False)(x)
         x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
