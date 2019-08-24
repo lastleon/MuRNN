@@ -13,7 +13,7 @@ import random
 
 import json
 import pickle
-from os import mkdir, system
+from os import mkdir, system, listdir
 from os.path import exists
 from dataprocessing import DataProcessor
 
@@ -178,6 +178,7 @@ class MuRNN:
         print('\nTensorBoard at %s \n' % url)
 
 if __name__ == '__main__':
+    print(listdir(".."))
     parser = argparse.ArgumentParser(prog="MuRNN")
     parser.add_argument("dataset_directory",
                         help="The path to the dataset on which the model should be trained")
