@@ -185,3 +185,9 @@ if __name__ == '__main__':
     model.new_model()
         
     model.train(save_every_epoch=True, run_tensorboard_server=True)
+
+"""
+    TEMP DISCLAIMER:
+    The music dataset was downloaded from http://www.piano-midi.de/ and is licensed under
+    the cc-by-sa Germany License (https://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
+"""
