@@ -206,7 +206,7 @@ if __name__ == '__main__':
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
     """
-    copy_tree("../artifacts/temp_storage/", "../storage/)
+    copy_tree("../artifacts/temp_storage/", "../storage/")
 
 """
     TEMP DISCLAIMER:
