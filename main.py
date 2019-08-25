@@ -183,6 +183,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
 
     parser.add_argument("dataset_directory",
+                        type=str,
                         help="The path to the dataset on which the model should be trained")
     parser.add_argument("steps_per_epoch",
                         type=int, 
