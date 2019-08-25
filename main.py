@@ -66,7 +66,7 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(1500, return_sequences=False)(data_input)
+        x = CuDNNLSTM(700, return_sequences=False)(data_input)
         x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -204,8 +204,6 @@ if __name__ == '__main__':
     model.new_model()
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
-
-    copy_tree(model.model_path, "../storage/model-" + model.timesignature + "/")
 
 """
     TEMP DISCLAIMER:

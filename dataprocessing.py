@@ -150,7 +150,7 @@ class DataProcessor():
         # only after the last sub-array has been yielded a new song
         # is loaded
 
-        LIMIT = 200
+        LIMIT = 100
 
         remainder = []
 
