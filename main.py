@@ -180,7 +180,6 @@ class MuRNN:
         print('\nTensorBoard at %s \n' % url)
 
 if __name__ == '__main__':
-    """
     parser = argparse.ArgumentParser(prog="MuRNN")
 
     parser.add_argument("dataset_directory",
@@ -205,8 +204,8 @@ if __name__ == '__main__':
     model.new_model()
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
-    """
-    copy_tree("../artifacts/temp_storage/", "../storage/")
+
+    copy_tree(model.model_path, "../storage/model-" + model.timesignature + "/")
 
 """
     TEMP DISCLAIMER:
