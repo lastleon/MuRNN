@@ -69,7 +69,10 @@ class MuRNN:
         self.dp = DataProcessor(self.data_path)
         
         # make model
-        data_input = Input(batch_shape=(None, None, 3), name="input")
+        if stateful:
+            data_input = Input(batch_shape=(1, None, 3), name="input")
+        else:
+            data_input = Input(batch_shape=(None, None, 3), name="input")
 
         x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
         x = Dropout(0.2)(x)
@@ -102,12 +105,11 @@ class MuRNN:
         if run_tensorboard_server:
             self.start_tensorboard()
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, self.STATEFUL), 
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else self.dp.default_limit)), 
                                  steps_per_epoch=steps_per_epoch, 
                                  epochs=epochs, 
-                                 verbose=0, 
-                                 callbacks=callbacks, 
-                                 stateful=self.STATEFUL)
+                                 verbose=1, 
+                                 callbacks=callbacks)
 
         self.model.save_weights(self.model_path + "weights.hdf5")
 

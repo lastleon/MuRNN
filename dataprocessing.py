@@ -11,6 +11,8 @@ import glob
 
 class DataProcessor():
 
+    default_limit = 1000
+
     def __init__(self, dir_path):
 
         self.twelfth = Decimal("0.08333333333333333333") # 1/12 
@@ -211,7 +213,7 @@ class DataProcessor():
             yield x_train, y_train
                     
                     
-    def train_generator_with_padding(self, sequence_length=10, LIMIT=1000):
+    def train_generator_with_padding(self, sequence_length=10, LIMIT=default_limit):
 
         #############   PRODUCED DATA:
         #### x_train:
