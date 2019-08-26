@@ -51,22 +51,27 @@ class MuRNN:
         
         self.model = None
         self.model_path = None
-        self.SEQUENCE_LENGTH = 70
 
-        self.timesignature = get_datetime_str()
+        self.SEQUENCE_LENGTH = -1
+        self.TIMESIGNATURE = get_datetime_str()
+        self.STATEFUL = None
         
     
-    def new_model(self):
+    def new_model(self, sequence_length=50, stateful=False):
+
+        self.SEQUENCE_LENGTH = sequence_length
+        self.STATEFUL = stateful
+
         # make new model directory
-        self.model_path = "./models/model-" + self.timesignature + "/"
+        self.model_path = "./models/model-" + self.TIMESIGNATURE + "/"
         mkdir_safely(self.model_path)
-
+        
         self.dp = DataProcessor(self.data_path)
-
+        
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(500, return_sequences=False)(data_input)
+        x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
         x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -82,7 +87,8 @@ class MuRNN:
             file.write(self.model.to_json())
         with open(self.model_path + "variables.json", "w") as file:
             file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
-                       '"TIMESIGNATURE" : "' + self.timesignature + '" }')
+                       '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '", ' +
+                       '"STATEFUL" : "' + str(self.STATEFUL) + '" }')
         
         tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
         early_stopping = EarlyStopping(monitor="loss", min_delta=0.0002, patience=5)
@@ -96,7 +102,13 @@ class MuRNN:
         if run_tensorboard_server:
             self.start_tensorboard()
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH), steps_per_epoch=steps_per_epoch, epochs=epochs, verbose=1, callbacks=callbacks)
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, self.STATEFUL), 
+                                 steps_per_epoch=steps_per_epoch, 
+                                 epochs=epochs, 
+                                 verbose=0, 
+                                 callbacks=callbacks, 
+                                 stateful=self.STATEFUL)
+
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 
@@ -112,10 +124,15 @@ class MuRNN:
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
 
             if "TIMESIGNATURE" in variables.keys():
-                self.timesignature = variables["TIMESIGNATURE"]
+                self.TIMESIGNATURE = variables["TIMESIGNATURE"]
             else:
                 # for backwards-compatibility
-                self.timesignature = model_dir_name.replace("model-","")
+                self.TIMESIGNATURE = model_dir_name.replace("model-","")
+            
+            if "STATEFUL" in variables.keys():
+                self.STATEFUL = bool(variables["STATEFUL"])
+            else:
+                self.STATEFUL = False
             
             self.dp = DataProcessor(self.data_path)
 
@@ -182,15 +199,24 @@ class MuRNN:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
 
-    parser.add_argument("dataset_directory",
+    parser.add_argument("dir",
                         type=str,
                         help="The path to the dataset on which the model should be trained")
-    parser.add_argument("steps_per_epoch",
+    parser.add_argument("-steps_per_epoch",
                         type=int, 
-                        help="The number of steps in each epoch of training")
-    parser.add_argument("epochs",
+                        default=400,
+                        help="The number of steps in each epoch of training, defaults to 400")
+    parser.add_argument("-epochs",
                         type=int,
-                        help="The number of training epochs")
+                        default=10,
+                        help="The number of training epochs, defaults to 10")
+    parser.add_argument("-seq_len",
+                        type=int,
+                        default=50,
+                        help="The sequence length, defaults to 50")
+    parser.add_argument("--stateful",
+                        action="store_true",
+                        help="User this flag to indicate the network is stateful\nNote that batch size will automatically be 1")
     parser.add_argument("--run_tensorboard",
                         action="store_true",
                         help="Use this flag to run a tensorboard server on port 6006")
@@ -200,9 +226,9 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    model = MuRNN(args.dataset_directory)
+    model = MuRNN(args.dir)
 
-    model.new_model()
+    model.new_model(sequence_length=args.seq_len, stateful=args.stateful)
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
 

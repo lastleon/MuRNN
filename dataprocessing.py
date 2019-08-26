@@ -13,7 +13,7 @@ class DataProcessor():
 
     def __init__(self, dir_path):
 
-        self.twelfth = Decimal("0.08333333333333333333") # 1/12
+        self.twelfth = Decimal("0.08333333333333333333") # 1/12 
 
         # check if path to directory is valid
         if isdir(dir_path):
@@ -124,6 +124,11 @@ class DataProcessor():
             DO NOT USE THIS, THIS DOES NOT WORK YET
 
         """)
+
+
+        return
+        
+        
         #############   PRODUCED DATA:
         #### x_train:
         # SHAPE: (batch_size, sequence_length, features)
@@ -150,7 +155,6 @@ class DataProcessor():
         # only after the last sub-array has been yielded a new song
         # is loaded
 
-        LIMIT = 100
 
         remainder = []
 
@@ -197,8 +201,8 @@ class DataProcessor():
                         note = music_data[i+sequence_length]
                         y_train[i][self.note_to_num(note)] = 1.0
                 
-                if batch_size > LIMIT:
-                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/LIMIT))))
+                if batch_size > self.LIMIT:
+                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/self.LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/self.LIMIT))))
                     x_train, y_train = remainder.pop()
 
             else:
@@ -207,7 +211,7 @@ class DataProcessor():
             yield x_train, y_train
                     
                     
-    def train_generator_with_padding(self, sequence_length=10):
+    def train_generator_with_padding(self, sequence_length=10, LIMIT=1000):
 
         #############   PRODUCED DATA:
         #### x_train:
@@ -228,8 +232,6 @@ class DataProcessor():
 
         ############# FAILSAFE
         # --> description in train_generator_no_padding
-
-        LIMIT = 1000
 
         remainder = []
 
