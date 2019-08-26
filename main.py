@@ -66,7 +66,7 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 3), name="input")
 
-        x = CuDNNLSTM(700, return_sequences=False)(data_input)
+        x = CuDNNLSTM(500, return_sequences=False)(data_input)
         x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -85,7 +85,7 @@ class MuRNN:
                        '"TIMESIGNATURE" : "' + self.timesignature + '" }')
         
         tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
-        early_stopping = EarlyStopping(min_delta=0.0002, patience=5)
+        early_stopping = EarlyStopping(monitor="loss", min_delta=0.0002, patience=5)
 
         callbacks = [tensorboard, early_stopping]
 
