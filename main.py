@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
 from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, LambdaCallback, Callback
 
 from tensorboard import default
 from tensorboard import program
@@ -39,6 +39,17 @@ def max(array):
             curr_value = array[i]
     return curr_index, curr_value
 
+class StateResetterCallback(Callback):
+
+    def __init__(self, dataprocessor, model):
+        super(StateResetterCallback, self).__init__()
+
+        self.dataprocessor = dataprocessor
+        self.model = model
+
+    def on_batch_end(self, batch, logs={}):
+        if self.dataprocessor.next_batch_is_new_song:
+            self.model.reset_states()
 
 class MuRNN:
     
@@ -93,24 +104,47 @@ class MuRNN:
                        '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '", ' +
                        '"STATEFUL" : "' + str(self.STATEFUL) + '" }')
         
-        tensorboard = TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True)
-        early_stopping = EarlyStopping(monitor="loss", min_delta=0.0002, patience=5)
-
-        callbacks = [tensorboard, early_stopping]
-
-        if save_every_epoch:
-            checkpointer = ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True)
-            callbacks.append(checkpointer)
-        
         if run_tensorboard_server:
             self.start_tensorboard()
 
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else self.dp.default_limit)), 
-                                 steps_per_epoch=steps_per_epoch, 
-                                 epochs=epochs, 
-                                 verbose=1, 
-                                 callbacks=callbacks)
+        if self.STATEFUL:
+            """
+            for epoch in range(epochs):
+                for steps in range(steps_per_epoch):
+                    data, is_new_song = next(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, 1, return_songstate=True))
 
+                    if is_new_song:
+                        self.model.reset_states()
+
+                    #self.model.fit(data[0], data[1], batch_size=1, epochs=1, verbose=1, callbacks=callbacks)
+                    self.model.train_on_batch(data[0], data[1])
+
+                if save_every_epoch:
+                    self.model.save_weights(self.model_path + "weights-{epoch:04d}.hdf5")
+            """
+
+        callbacks = []
+
+        # Tensorboard
+        callbacks.append(TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True))
+        #EarlyStopping
+        callbacks.append(EarlyStopping(monitor="loss", min_delta=0.0002, patience=5))
+
+        if self.STATEFUL:
+            # StateResetterCallback
+            callbacks.append(StateResetterCallback(self.dp, self.model))
+        
+        if save_every_epoch:
+            # ModelCheckpoint
+            callbacks.append(ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True))
+        
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else self.dp.default_limit)), 
+                                steps_per_epoch=steps_per_epoch, 
+                                epochs=epochs, 
+                                verbose=1, 
+                                callbacks=callbacks)
+
+        
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 

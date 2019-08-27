@@ -16,6 +16,7 @@ class DataProcessor():
     def __init__(self, dir_path):
 
         self.twelfth = Decimal("0.08333333333333333333") # 1/12 
+        self.next_batch_is_new_song = None
 
         # check if path to directory is valid
         if isdir(dir_path):
@@ -128,7 +129,7 @@ class DataProcessor():
         """)
 
 
-        return
+        raise NotImplementedError
         
         
         #############   PRODUCED DATA:
@@ -292,7 +293,10 @@ class DataProcessor():
 
             else:
                 x_train, y_train_notes, y_train_duration, y_train_offset = remainder.pop()
-                
+            
+            
+            self.next_batch_is_new_song = len(remainder) == 0
+            
             yield [x_train], [y_train_notes, y_train_duration, y_train_offset]
 
     # STRUCTURE OF THE LOADED FILE
