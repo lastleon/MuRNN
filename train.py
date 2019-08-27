@@ -53,12 +53,12 @@ class StateResetterCallback(Callback):
 
 class MuRNN:
     
-    def __init__(self, data_dir):
+    def __init__(self):
         
         mkdir_safely("./models/")
 
         self.dp = None
-        self.data_path = data_dir
+        self.data_path = None
         
         self.model = None
         self.model_path = None
@@ -68,7 +68,9 @@ class MuRNN:
         self.STATEFUL = None
         
     
-    def new_model(self, sequence_length=50, stateful=False):
+    def new_model(self, data_dir, sequence_length=50, stateful=False):
+        
+        self.data_path = data_dir
 
         self.SEQUENCE_LENGTH = sequence_length
         self.STATEFUL = stateful
@@ -76,6 +78,7 @@ class MuRNN:
         # make new model directory
         self.model_path = "./models/model-" + self.TIMESIGNATURE + "/"
         mkdir_safely(self.model_path)
+        mkdir_safely(self.model_path + "songs/")
         
         self.dp = DataProcessor(self.data_path)
         
@@ -107,22 +110,6 @@ class MuRNN:
         if run_tensorboard_server:
             self.start_tensorboard()
 
-        if self.STATEFUL:
-            """
-            for epoch in range(epochs):
-                for steps in range(steps_per_epoch):
-                    data, is_new_song = next(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, 1, return_songstate=True))
-
-                    if is_new_song:
-                        self.model.reset_states()
-
-                    #self.model.fit(data[0], data[1], batch_size=1, epochs=1, verbose=1, callbacks=callbacks)
-                    self.model.train_on_batch(data[0], data[1])
-
-                if save_every_epoch:
-                    self.model.save_weights(self.model_path + "weights-{epoch:04d}.hdf5")
-            """
-
         callbacks = []
 
         # Tensorboard
@@ -132,7 +119,7 @@ class MuRNN:
 
         if self.STATEFUL:
             # StateResetterCallback
-            callbacks.append(StateResetterCallback(self.dp, self.model))
+            #callbacks.append(StateResetterCallback(self.dp, self.model))
         
         if save_every_epoch:
             # ModelCheckpoint
@@ -143,14 +130,14 @@ class MuRNN:
                                 epochs=epochs, 
                                 verbose=1, 
                                 callbacks=callbacks)
-
         
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 
-    def load_model(self, model_dir_name, weights_filename="weights.hdf5"):
+    def load_model(self, model_dir_name, dataset_dir, weights_filename="weights.hdf5"):
 
         self.model_path = "./models/" + model_dir_name + "/"
+        self.data_path = dataset_dir
 
         with open(self.model_path + "model.json", "r") as model_json:
             self.model = model_from_json(model_json.read())
@@ -177,8 +164,6 @@ class MuRNN:
         self.compile()
     
     def make_song(self, length):
-        np.set_printoptions(threshold=np.inf)
-
         song = []
         sequence = np.ones((1, self.SEQUENCE_LENGTH, 3))
 
@@ -208,21 +193,14 @@ class MuRNN:
             sequence[0][-1][1] = duration_index / len(self.dp.duration_vocab)
             sequence[0][-1][2] = offset_index / len(self.dp.offset_vocab)
 
-        mkdir_safely(self.model_path + "songs/")
-        
-        songpath = self.model_path + "songs/song-" + get_datetime_str() + ".mu"
-
-        with open(songpath, "wb") as f:
-            pickle.dump(song, f)
-
-        return songpath
+        return song
         
     
     def compile(self):
-        optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
+        #optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
 
         self.model.compile(loss="categorical_crossentropy",
-            optimizer=optimizer,
+            optimizer="adam",
             metrics=["accuracy"])
 
     def start_tensorboard(self):
@@ -262,9 +240,9 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    model = MuRNN(args.dir)
+    model = MuRNN()
 
-    model.new_model(sequence_length=args.seq_len, stateful=args.stateful)
+    model.new_model(args.dir, sequence_length=args.seq_len, stateful=args.stateful)
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
 

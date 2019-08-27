@@ -9,13 +9,20 @@ from os import listdir
 import pickle
 import glob
 
-class DataProcessor():
+import datetime
+
+#### Helper functions
+
+def get_datetime_str():
+    return '{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
+
+class DataProcessor:
 
     default_limit = 1000
+    twelfth = Decimal("0.08333333333333333333") # 1/12 
 
     def __init__(self, dir_path):
 
-        self.twelfth = Decimal("0.08333333333333333333") # 1/12 
         self.next_batch_is_new_song = None
 
         # check if path to directory is valid
@@ -23,7 +30,7 @@ class DataProcessor():
             self.dir_path = dir_path
         else:
             raise Exception("Provided path is faulty...")
-
+        
         self.process_files()
 
 
@@ -165,7 +172,7 @@ class DataProcessor():
             if len(remainder) == 0:
                 # random file chosen and loaded
                 filename = splitext(random.choice(self.files))[0]
-                music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
+                music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
                 
                 # sequence length shouldn't be larger than the whole music data array
                 if len(music_data) < sequence_length:
@@ -242,7 +249,7 @@ class DataProcessor():
             if len(remainder) == 0:
                 # random file chosen and loaded
                 filename = splitext(random.choice(self.files))[0]
-                music_data = self.load_processed_file(join(self.dir_path, filename + ".mu"))
+                music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
 
                 # batch_size is number of shifts of the training data array
                 batch_size = len(music_data)
@@ -301,39 +308,37 @@ class DataProcessor():
 
     # STRUCTURE OF THE LOADED FILE
     # --> see create_processed_file
-    def load_processed_file(self, f_path):
-        if isfile(f_path):
+    @staticmethod
+    def load_processed_file(f_path):
+        if isfile(f_path)and splitext(f_path)[1] == ".mu":
             with open(f_path, "rb") as f:
                 return pickle.load(f)
         else:
             print("File with path '" + f_path + "' could not be loaded...")
             return None    
 
-    def retrieve_midi_from_processed_file(self, f_path):
-        if isfile(f_path) and splitext(f_path)[1] == ".mu":
-            with open(f_path, "rb") as f:
-                data = pickle.load(f)
-                stream = music21.stream.Stream()
-                curr_offset = 0.0
-                for tup in data:
-                    pitch, duration, offset = tup
-                    
-                    duration = self.int_representation_to_quarterLength(float(duration))
-                    
-                    offset = self.int_representation_to_quarterLength(float(offset))
+    @staticmethod
+    def retrieve_midi_from_loaded_data(data, target_dir="./"):
 
-                    curr_offset += offset
+        stream = music21.stream.Stream()
+        curr_offset = 0.0
+        for tup in data:
+            pitch, duration, offset = tup
+            
+            duration = DataProcessor.int_representation_to_quarterLength(float(duration))
+            
+            offset = DataProcessor.int_representation_to_quarterLength(float(offset))
 
-                    if "," in pitch:
-                        note = music21.chord.Chord(pitch.split(","))
-                    else:
-                        note = music21.note.Note(pitch)
-                    note.duration = music21.duration.Duration(duration)
+            curr_offset += offset
 
-                    stream.insert(curr_offset, note, ignoreSort=True)
-                stream.write('midi', fp=(splitext(f_path)[0]+"-retrieved.midi"))
-        else:
-            print("File with path '" + f_path + "' could not be retrieved...")
+            if "," in pitch:
+                note = music21.chord.Chord(pitch.split(","))
+            else:
+                note = music21.note.Note(pitch)
+            note.duration = music21.duration.Duration(duration)
+
+            stream.insert(curr_offset, note, ignoreSort=True)
+        stream.write('midi', fp=(target_dir + "song-" + get_datetime_str() +".mid"))
 
     ### NOTE
     def make_note_conversion_dictionaries(self):
@@ -393,15 +398,17 @@ class DataProcessor():
         return tuple(note_vocab), tuple(duration_vocab), tuple(offset_vocab)
     
     # convert int represented quarterLengths back
-    def int_representation_to_quarterLength(self, value):
-        return float(Decimal(value) * self.twelfth)
+    @staticmethod
+    def int_representation_to_quarterLength(value):
+        return float(Decimal(value) * DataProcessor.twelfth)
 
     # convert quarterLengths to integer representation
-    def quarterLength_to_int_representation(self, value):
+    @staticmethod
+    def quarterLength_to_int_representation(value):
         # this will always return integers values, but as floats
         if len(value.split("/")) > 1:
-            return round(float(((Decimal(value.split("/")[0]) / Decimal(value.split("/")[1])) / self.twelfth)))
+            return round(float(((Decimal(value.split("/")[0]) / Decimal(value.split("/")[1])) / DataProcessor.twelfth)))
         else:
-            return round(float(Decimal(value) / self.twelfth))
+            return round(float(Decimal(value) / DataProcessor.twelfth))
 
     
