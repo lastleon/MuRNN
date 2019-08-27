@@ -84,9 +84,9 @@ class MuRNN:
         
         # make model
         if stateful:
-            data_input = Input(batch_shape=(1, None, 3), name="input")
+            data_input = Input(batch_shape=(1, None, 5), name="input")
         else:
-            data_input = Input(batch_shape=(None, None, 3), name="input")
+            data_input = Input(batch_shape=(None, None, 5), name="input")
 
         x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
         x = Dropout(0.2)(x)
@@ -94,8 +94,10 @@ class MuRNN:
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
         duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
         offset_picker = Dense(len(self.dp.offset_vocab), activation="softmax", name="offset_output")(x)
+        volume_picker = Dense(1, activation="sigmoid", name="volume_output")(x)
+        tempo_picker = Dense(1, activation="sigmoid", name="tempo_output")(x)
 
-        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker])
+        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
         self.compile()
 
     def train(self, steps_per_epoch, epochs, save_every_epoch=False, run_tensorboard_server=False):
@@ -103,8 +105,8 @@ class MuRNN:
         with open(self.model_path + "model.json", "w") as file:
             file.write(self.model.to_json())
         with open(self.model_path + "variables.json", "w") as file:
-            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ', ' +
-                       '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '", ' +
+            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ',\n' +
+                       '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '",\n' +
                        '"STATEFUL" : "' + str(self.STATEFUL) + '" }')
         
         if run_tensorboard_server:
@@ -166,7 +168,7 @@ class MuRNN:
     
     def make_song(self, length):
         song = []
-        sequence = np.ones((1, self.SEQUENCE_LENGTH, 3))
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 5))
 
         random_note = random.randrange(0, len(self.dp.note_vocab))
         sequence[0][-1][0] =  float(random_note) / float(len(self.dp.note_vocab))
@@ -177,22 +179,41 @@ class MuRNN:
         random_offset = random.randrange(0, len(self.dp.offset_vocab))
         sequence[0][-1][2] =  float(random_offset) / float(len(self.dp.offset_vocab))
 
-        song.append((self.dp.num_to_note(random_note), self.dp.num_to_duration(random_duration), self.dp.num_to_offset(random_offset)))
+        random_volume = random.random()
+        sequence[0][-1][3] = random_volume
+        
+        random_tempo = random.random()
+        sequence[0][-1][4] = random_tempo
+
+        song.append((self.dp.num_to_note(random_note),
+                     self.dp.num_to_duration(random_duration),
+                     self.dp.num_to_offset(random_offset),
+                     random_volume,
+                     random_tempo))
 
         for i in range(length-1):
-            note_prediction, duration_prediction, offset_prediction = self.model.predict(sequence)
+            note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction = self.model.predict(sequence)
 
             note_index = max(note_prediction[0])[0]
             duration_index = max(duration_prediction[0])[0]
             offset_index = max(offset_prediction[0])[0]
+
+            volume_prediction = volume_prediction[0][0]
+            tempo_prediction = tempo_prediction[0][0]
             
-            song.append((self.dp.num_to_note(note_index), self.dp.num_to_duration(duration_index), self.dp.num_to_offset(offset_index)))
+            song.append((self.dp.num_to_note(note_index),
+                         self.dp.num_to_duration(duration_index),
+                         self.dp.num_to_offset(offset_index),
+                         volume_prediction,
+                         tempo_prediction))
 
             sequence = np.roll(sequence, -sequence.shape[2])
 
             sequence[0][-1][0] = note_index / len(self.dp.note_vocab)
             sequence[0][-1][1] = duration_index / len(self.dp.duration_vocab)
             sequence[0][-1][2] = offset_index / len(self.dp.offset_vocab)
+            sequence[0][-1][3] = volume_prediction
+            sequence[0][-1][4] = tempo_prediction
 
         return song
         
@@ -200,7 +221,12 @@ class MuRNN:
     def compile(self):
         #optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
 
-        self.model.compile(loss="categorical_crossentropy",
+        self.model.compile(
+            loss={"note_output" : "categorical_crossentropy",
+                  "duration_output" : "categorical_crossentropy",
+                  "offset_output" : "categorical_crossentropy",
+                  "volume_output" : "mean_squared_error",
+                  "tempo_output" : "mean_squared_error"},
             optimizer="adam",
             metrics=["accuracy"])
 

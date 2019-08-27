@@ -69,7 +69,7 @@ class DataProcessor:
         else:
             self.files = files
 
-            self.note_vocab, self.duration_vocab, self.offset_vocab = self.get_vocab()
+            self.note_vocab, self.duration_vocab, self.offset_vocab, self.max_tempo = self.get_vocab_and_max_tempo()
 
             # NOTE
             self.notes_to_num_dict, self.num_to_notes_dict = self.make_note_conversion_dictionaries()
@@ -104,6 +104,10 @@ class DataProcessor:
 
                 note_offset = float(self.quarterLength_to_int_representation(str(note.offset)) - previous_offset)
                 previous_offset = float(self.quarterLength_to_int_representation(str(note.offset)))
+
+                note_volume = float(note.volume.getRealized())
+
+                note_tempo = float(note.getContextByClass("MetronomeMark").number)
                     
                 pitches = note.pitches
                 pitch_names = []
@@ -121,7 +125,7 @@ class DataProcessor:
                 pitch_names.sort()
                 pitch_name_string = ",".join(pitch_names)
             
-                notes.append((pitch_name_string, note_duration, note_offset))
+                notes.append((pitch_name_string, note_duration, note_offset, note_volume, note_tempo))
             
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)
@@ -269,42 +273,50 @@ class DataProcessor:
                 # ]
                 # ---> probability of a note
                 
-                x_train = np.ones((batch_size, sequence_length, 3))
+                x_train = np.ones((batch_size, sequence_length, 5))
 
                 y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
                 y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
                 y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
+                y_train_volume = np.zeros((batch_size, 1))
+                y_train_tempo = np.zeros((batch_size, 1))
 
                 for i in range(batch_size):
                     # shift batches in x_train one step to the left
                     x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
-                    # add new note/duration/offset
+                    # add new note/duration/offset/volume/tempo
                     x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
 
                     x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
                     x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
                     x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
+                    x_train[-1][-1][3] = float(music_data[i][3])
+                    x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
 
                     if i != batch_size-1:
                         y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
                         y_train_duration[i][self.duration_to_num(music_data[i+1][1])] = 1.0
                         y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
+                        y_train_volume[i][0] = music_data[i+1][3]
+                        y_train_tempo[i][0] = float(music_data[i+1][4]) / float(self.max_tempo)
                 
                 if batch_size > LIMIT:
                     remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), 
                                          np.array_split(y_train_notes, np.ceil(len(y_train_notes)/LIMIT)),
                                          np.array_split(y_train_duration, np.ceil(len(y_train_duration)/LIMIT)),
-                                         np.array_split(y_train_offset, np.ceil(len(y_train_offset)/LIMIT))))
+                                         np.array_split(y_train_offset, np.ceil(len(y_train_offset)/LIMIT)),
+                                         np.array_split(y_train_volume, np.ceil(len(y_train_volume)/LIMIT)),
+                                         np.array_split(y_train_tempo, np.ceil(len(y_train_tempo)/LIMIT))))
                     
-                    x_train, y_train_notes, y_train_duration, y_train_offset = remainder.pop()
+                    x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
 
             else:
-                x_train, y_train_notes, y_train_duration, y_train_offset = remainder.pop()
+                x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
             
             
             self.next_batch_is_new_song = len(remainder) == 0
             
-            yield [x_train], [y_train_notes, y_train_duration, y_train_offset]
+            yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo]
 
     # STRUCTURE OF THE LOADED FILE
     # --> see create_processed_file
@@ -323,19 +335,26 @@ class DataProcessor:
         stream = music21.stream.Stream()
         curr_offset = 0.0
         for tup in data:
-            pitch, duration, offset = tup
+            pitch, duration, offset, volume, tempo = tup
             
+            # transform the values back into their original forms
             duration = DataProcessor.int_representation_to_quarterLength(float(duration))
-            
             offset = DataProcessor.int_representation_to_quarterLength(float(offset))
 
             curr_offset += offset
 
+            # add the values to the stream
             if "," in pitch:
                 note = music21.chord.Chord(pitch.split(","))
             else:
                 note = music21.note.Note(pitch)
             note.duration = music21.duration.Duration(duration)
+            note.volume.velocityScalar = volume
+
+            if len(stream) > 0:
+                metronome_before = stream.flat.notes[-1].getContextByClass("MetronomeMark")
+                if metronome_before != None and metronome_before.number != tempo:
+                    stream.insert(curr_offset, music21.tempo.MetronomeMark(number=tempo))
 
             stream.insert(curr_offset, note, ignoreSort=True)
         stream.write('midi', fp=(target_dir + "song-" + get_datetime_str() +".mid"))
@@ -382,10 +401,12 @@ class DataProcessor:
     def num_to_offset(self, num):
         return self.num_to_offsets_dict[num]
     
-    def get_vocab(self):
+    def get_vocab_and_max_tempo(self):
         note_vocab = set()
         duration_vocab = set()
         offset_vocab = set()
+
+        tempos = set()
 
         for file in glob.glob(self.dir_path + "*.mu"):
             with open(file, "rb") as f:
@@ -394,8 +415,10 @@ class DataProcessor:
                     note_vocab.add(tup[0])
                     duration_vocab.add(tup[1])
                     offset_vocab.add(tup[2])
+
+                    tempos.add(tup[4])
         
-        return tuple(note_vocab), tuple(duration_vocab), tuple(offset_vocab)
+        return tuple(note_vocab), tuple(duration_vocab), tuple(offset_vocab), float(max(tempos))
     
     # convert int represented quarterLengths back
     @staticmethod
