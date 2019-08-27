@@ -120,6 +120,7 @@ class MuRNN:
         if self.STATEFUL:
             # StateResetterCallback
             #callbacks.append(StateResetterCallback(self.dp, self.model))
+            pass
         
         if save_every_epoch:
             # ModelCheckpoint
