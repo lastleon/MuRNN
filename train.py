@@ -100,7 +100,7 @@ class MuRNN:
         self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
         self.compile()
 
-    def train(self, steps_per_epoch, epochs, save_every_epoch=False, run_tensorboard_server=False):
+    def train(self, steps_per_epoch, epochs, save_every_epoch=False, run_tensorboard_server=False, limit=DataProcessor.default_limit):
 
         with open(self.model_path + "model.json", "w") as file:
             file.write(self.model.to_json())
@@ -128,7 +128,7 @@ class MuRNN:
             # ModelCheckpoint
             callbacks.append(ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True))
         
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else self.dp.default_limit)), 
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else limit)), 
                                 steps_per_epoch=steps_per_epoch, 
                                 epochs=epochs, 
                                 verbose=1, 
@@ -263,15 +263,19 @@ if __name__ == '__main__':
     parser.add_argument("-steps_per_epoch",
                         type=int, 
                         default=400,
-                        help="The number of steps in each epoch of training, defaults to 400")
+                        help="The number of steps in each epoch of training,\ndefaults to 400")
     parser.add_argument("-epochs",
                         type=int,
                         default=10,
-                        help="The number of training epochs, defaults to 10")
+                        help="The number of training epochs,\ndefaults to 10")
     parser.add_argument("-seq_len",
                         type=int,
                         default=50,
-                        help="The sequence length, defaults to 50")
+                        help="The sequence length,\ndefaults to 50")
+    parser.add_argument("-limit",
+                        type=int,
+                        default=DataProcessor.default_limit,
+                        help="Set a batchsize limit as to not exceed memory capabilities of the GPU,\ndefaults to " + str(DataProcessor.default_limit))
     parser.add_argument("--stateful",
                         action="store_true",
                         help="User this flag to indicate the network is stateful\nNote that batch size will automatically be 1")
@@ -288,7 +292,7 @@ if __name__ == '__main__':
 
     model.new_model(args.dir, sequence_length=args.seq_len, stateful=args.stateful)
         
-    model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard)
+    model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard, limit=args.limit)
 
 """
     TEMP DISCLAIMER:
