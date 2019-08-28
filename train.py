@@ -14,21 +14,13 @@ import random
 import json
 import pickle
 from os import mkdir, system, listdir
-from os.path import exists
+from os.path import exists, join
 from dataprocessing import DataProcessor
 
 import argparse
 
 from distutils.dir_util import copy_tree
-
-### helper functions
-
-def get_datetime_str():
-    return '{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
-
-def mkdir_safely(path):
-    if not exists(path):
-        mkdir(path)
+from utils import mkdir_safely, get_datetime_str
 
 def max(array):
     curr_index = -1
@@ -54,8 +46,6 @@ class StateResetterCallback(Callback):
 class MuRNN:
     
     def __init__(self):
-        
-        mkdir_safely("./models/")
 
         self.dp = None
         self.data_path = None
@@ -66,9 +56,13 @@ class MuRNN:
         self.SEQUENCE_LENGTH = -1
         self.TIMESIGNATURE = get_datetime_str()
         self.STATEFUL = None
+
+        logging.getLogger("werkzeug").setLevel(logging.ERROR)
         
     
-    def new_model(self, data_dir, sequence_length=50, stateful=False):
+    def new_model(self, data_dir, sequence_length=50, stateful=False, target_dir="./models/"):
+
+        mkdir_safely(target_dir)
         
         self.data_path = data_dir
 
@@ -76,9 +70,9 @@ class MuRNN:
         self.STATEFUL = stateful
 
         # make new model directory
-        self.model_path = "./models/model-" + self.TIMESIGNATURE + "/"
+        self.model_path = target_dir + "model-" + self.TIMESIGNATURE + "/"
         mkdir_safely(self.model_path)
-        mkdir_safely(self.model_path + "songs/")
+        mkdir_safely(join(self.model_path, "songs/"))
         
         self.dp = DataProcessor(self.data_path)
         
@@ -100,18 +94,19 @@ class MuRNN:
         self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
         self.compile()
 
-    def train(self, steps_per_epoch, epochs, save_every_epoch=False, run_tensorboard_server=False, limit=DataProcessor.default_limit):
-
-        with open(self.model_path + "model.json", "w") as file:
+    def train(self, steps_per_epoch, epochs, save_every_epoch=False, limit=DataProcessor.default_limit):
+        # save everything that can be saved before training
+        with open(join(self.model_path, "model.json"), "w") as file:
             file.write(self.model.to_json())
-        with open(self.model_path + "variables.json", "w") as file:
+        with open(join(self.model_path, "variables.json"), "w") as file:
             file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ',\n' +
                        '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '",\n' +
                        '"STATEFUL" : "' + str(self.STATEFUL) + '" }')
         
-        if run_tensorboard_server:
-            self.start_tensorboard()
+        with open(join(self.model_path, "dataprocessor.pkl"), "wb") as file:
+            pickle.dump(self.dp, file)
 
+        # training
         callbacks = []
 
         # Tensorboard
@@ -137,15 +132,14 @@ class MuRNN:
         self.model.save_weights(self.model_path + "weights.hdf5")
 
 
-    def load_model(self, model_dir_name, dataset_dir, weights_filename="weights.hdf5"):
+    def load_model(self, model_dir_path, weights_filename="weights.hdf5"):
 
-        self.model_path = "./models/" + model_dir_name + "/"
-        self.data_path = dataset_dir
+        self.model_path = model_dir_path
 
-        with open(self.model_path + "model.json", "r") as model_json:
+        with open(join(self.model_path, "model.json"), "r") as model_json:
             self.model = model_from_json(model_json.read())
 
-        with open(self.model_path + "variables.json", "r") as variable_json:
+        with open(join(self.model_path, "variables.json"), "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
 
@@ -160,9 +154,10 @@ class MuRNN:
             else:
                 self.STATEFUL = False
             
-            self.dp = DataProcessor(self.data_path)
+            with open(join(self.model_path, "dataprocessor.pkl"), "rb") as file:
+                self.dp = pickle.load(file)
 
-        self.model.load_weights(self.model_path + weights_filename)
+        self.model.load_weights(join(self.model_path, weights_filename))
 
         self.compile()
     
@@ -229,13 +224,6 @@ class MuRNN:
             loss_weights=self.get_lossweights(),
             optimizer="adam",
             metrics=["accuracy"])
-
-    def start_tensorboard(self):
-        log = logging.getLogger("werkzeug").setLevel(logging.ERROR)
-        tb = program.TensorBoard(default.get_plugins())
-        tb.configure(argv=[None, "--logdir", self.model_path + "logs/"])
-        url = tb.launch()
-        print('\nTensorBoard at %s \n' % url)
     
     def get_lossweights(self, smoothing=0.4):
 
@@ -248,7 +236,6 @@ class MuRNN:
         
 
         weighted_average = float(sum([tup[0]*tup[1] for tup in zip(output_sizes, output_weights)])) / float(sum(output_weights))
-        print(weighted_average)
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
@@ -259,29 +246,30 @@ if __name__ == '__main__':
 
     parser.add_argument("dir",
                         type=str,
-                        help="The path to the dataset on which the model should be trained")
+                        help="Set the path to the dataset on which the model will be trained")
     parser.add_argument("-steps_per_epoch",
                         type=int, 
                         default=400,
-                        help="The number of steps in each epoch of training,\ndefaults to 400")
+                        help="Specify the number of steps in each epoch of training,\ndefaults to 400")
     parser.add_argument("-epochs",
                         type=int,
                         default=10,
-                        help="The number of training epochs,\ndefaults to 10")
+                        help="Specify the number of training epochs,\ndefaults to 10")
     parser.add_argument("-seq_len",
                         type=int,
                         default=50,
-                        help="The sequence length,\ndefaults to 50")
+                        help="Specify the sequence length,\ndefaults to 50")
     parser.add_argument("-limit",
                         type=int,
                         default=DataProcessor.default_limit,
                         help="Set a batchsize limit as to not exceed memory capabilities of the GPU,\ndefaults to " + str(DataProcessor.default_limit))
+    parser.add_argument("-target_dir",
+                        type=str,
+                        default="./models/",
+                        help="Specify a target directory in which your model-directory will be saved,\ndefaults to './models/'")
     parser.add_argument("--stateful",
                         action="store_true",
-                        help="User this flag to indicate the network is stateful\nNote that batch size will automatically be 1")
-    parser.add_argument("--run_tensorboard",
-                        action="store_true",
-                        help="Use this flag to run a tensorboard server on port 6006")
+                        help="Use this flag to indicate the network is stateful\nNote that batch size will automatically be 1")
     parser.add_argument("--save_every_epoch",
                         action="store_true",
                         help="Use this flag to save the weights of the model for each epoch")
@@ -290,9 +278,9 @@ if __name__ == '__main__':
 
     model = MuRNN()
 
-    model.new_model(args.dir, sequence_length=args.seq_len, stateful=args.stateful)
+    model.new_model(args.dir, sequence_length=args.seq_len, stateful=args.stateful, target_dir=args.target_dir)
         
-    model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, run_tensorboard_server=args.run_tensorboard, limit=args.limit)
+    model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, limit=args.limit)
 
 """
     TEMP DISCLAIMER:

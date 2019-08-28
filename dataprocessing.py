@@ -9,12 +9,7 @@ from os import listdir
 import pickle
 import glob
 
-import datetime
-
-#### Helper functions
-
-def get_datetime_str():
-    return '{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
+from utils import mkdir_safely, get_datetime_str
 
 class DataProcessor:
 
@@ -331,6 +326,8 @@ class DataProcessor:
 
     @staticmethod
     def retrieve_midi_from_loaded_data(data, target_dir="./"):
+        
+        mkdir_safely(target_dir)
 
         stream = music21.stream.Stream()
         curr_offset = 0.0
@@ -357,7 +354,8 @@ class DataProcessor:
                     stream.insert(curr_offset, music21.tempo.MetronomeMark(number=tempo))
 
             stream.insert(curr_offset, note, ignoreSort=True)
-        stream.write('midi', fp=(target_dir + "song-" + get_datetime_str() +".mid"))
+        stream.write('midi', fp=join(target_dir, "song-" + get_datetime_str() +".mid"))
+        print(join(target_dir, "song-" + get_datetime_str() +".mid"))
 
     ### NOTE
     def make_note_conversion_dictionaries(self):
