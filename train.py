@@ -82,14 +82,14 @@ class MuRNN:
         else:
             data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(300, return_sequences=False, stateful=stateful)(data_input)
-        x = Dropout(0.2)(x)
+        x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
+        x = Dropout(0.3)(x)
 
-        x = Dense(500, activation="relu")(x)
-        x = Dropout(0.2)(x)
+        x = Dense(700, activation="relu")(x)
+        x = Dropout(0.3)(x)
 
-        x = Dense(500, activation="relu")(x)
-        x = Dropout(0.2)(x)
+        x = Dense(700, activation="relu")(x)
+        x = Dropout(0.3)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
         duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
