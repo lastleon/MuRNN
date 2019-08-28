@@ -225,8 +225,9 @@ class MuRNN:
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
                   "offset_output" : "categorical_crossentropy",
-                  "volume_output" : "mean_squared_error",
-                  "tempo_output" : "mean_squared_error"},
+                  "volume_output" : "mean_absolute_error",
+                  "tempo_output" : "mean_absolute_error"},
+            loss_weights=self.get_lossweights(),
             optimizer="adam",
             metrics=["accuracy"])
 
@@ -236,6 +237,23 @@ class MuRNN:
         tb.configure(argv=[None, "--logdir", self.model_path + "logs/"])
         url = tb.launch()
         print('\nTensorBoard at %s \n' % url)
+    
+    def get_lossweights(self, smoothing=0.1):
+
+        output_sizes = [len(self.dp.note_vocab),
+                        len(self.dp.duration_vocab),
+                        len(self.dp.offset_vocab),
+                        1,
+                        1]
+        output_weights = [0.4, 0.15, 0.15, 0.15, 0.15]
+        
+
+        weighted_average = float(sum([tup[0]*tup[1] for tup in zip(output_sizes, output_weights)])) / float(sum(output_weights))
+        print(weighted_average)
+
+        output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
+
+        return dict(zip(output_names, [1+smoothing*((weighted_average / float(size))-1) for size in output_sizes]))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
