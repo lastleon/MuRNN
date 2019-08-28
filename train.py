@@ -220,7 +220,6 @@ class MuRNN:
     
     def compile(self):
         #optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
-
         self.model.compile(
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
@@ -238,7 +237,7 @@ class MuRNN:
         url = tb.launch()
         print('\nTensorBoard at %s \n' % url)
     
-    def get_lossweights(self, smoothing=0.1):
+    def get_lossweights(self, smoothing=0.4):
 
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
@@ -253,7 +252,7 @@ class MuRNN:
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
-        return dict(zip(output_names, [1+smoothing*((weighted_average / float(size))-1) for size in output_sizes]))
+        return dict(zip(output_names, [((weighted_average / float(size))*(1-smoothing)) + smoothing for size in output_sizes]))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
