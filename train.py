@@ -230,17 +230,27 @@ class MuRNN:
             optimizer="adam",
             metrics=["accuracy"])
     
-    def get_lossweights(self, smoothing=0.25):
+    def get_lossweights(self, smoothing=0.3):
 
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
                         len(self.dp.offset_vocab),
                         1,
                         1]
+        
+        ## Hyperparameter
+        weights = [0.4, 0.15, 0.15, 0.15, 0.15]
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
-        return dict(zip(output_names, [smoothing * ((float(sum(output_sizes)) / float(len(output_sizes)*size)) - 1) + 1  for size in output_sizes]))
+        output_weights = []
+
+        for i in range(len(output_sizes)):
+            a = float(weights[i] * sum(output_sizes)) / float(output_sizes[i] * sum(weights))
+
+            output_weights.append(smoothing * (a - 1) + 1)
+
+        return dict(zip(output_names, output_weights))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
