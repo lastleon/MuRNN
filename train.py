@@ -82,7 +82,7 @@ class MuRNN:
         else:
             data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
+        x = CuDNNLSTM(300, return_sequences=False, stateful=stateful)(data_input)
         x = Dropout(0.2)(x)
 
         x = Dense(500, activation="relu")(x)
