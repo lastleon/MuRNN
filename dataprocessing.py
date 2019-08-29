@@ -354,9 +354,10 @@ class DataProcessor:
                     stream.insert(curr_offset, music21.tempo.MetronomeMark(number=tempo))
 
             stream.insert(curr_offset, note, ignoreSort=True)
-        stream.write('midi', fp=join(target_dir, "song-" + get_datetime_str() +".mid"))
-        print(join(target_dir, "song-" + get_datetime_str() +".mid"))
-
+            file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
+        stream.write('midi', fp=file_path)
+        print("File saved at '" + file_path + "'...")
+        
     ### NOTE
     def make_note_conversion_dictionaries(self):
         notes_to_num = dict((note,num) for num,note in enumerate(self.note_vocab))

@@ -83,13 +83,13 @@ class MuRNN:
             data_input = Input(batch_shape=(None, None, 5), name="input")
 
         x = CuDNNLSTM(500, return_sequences=False, stateful=stateful)(data_input)
-        x = Dropout(0.3)(x)
+        x = Dropout(0.2)(x)
 
-        x = Dense(700, activation="relu")(x)
-        x = Dropout(0.3)(x)
+        x = Dense(500, activation="relu")(x)
+        x = Dropout(0.2)(x)
 
-        x = Dense(700, activation="relu")(x)
-        x = Dropout(0.3)(x)
+        x = Dense(500, activation="relu")(x)
+        x = Dropout(0.2)(x)
 
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
         duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
@@ -218,9 +218,8 @@ class MuRNN:
 
         return song
         
-    
     def compile(self):
-        #optimizer = tf.keras.optimizers.SGD(lr=0.01, decay=1e-5, momentum=0.95)
+        print(self.get_lossweights())
         self.model.compile(
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
@@ -231,21 +230,17 @@ class MuRNN:
             optimizer="adam",
             metrics=["accuracy"])
     
-    def get_lossweights(self, smoothing=0.4):
+    def get_lossweights(self, smoothing=0.25):
 
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
                         len(self.dp.offset_vocab),
                         1,
                         1]
-        output_weights = [0.4, 0.15, 0.15, 0.15, 0.15]
-        
-
-        weighted_average = float(sum([tup[0]*tup[1] for tup in zip(output_sizes, output_weights)])) / float(sum(output_weights))
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
-        return dict(zip(output_names, [((weighted_average / float(size))*(1-smoothing)) + smoothing for size in output_sizes]))
+        return dict(zip(output_names, [smoothing * (float(sum(output_sizes)) / float(len(output_sizes) * size)) + 1  for size in output_sizes]))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")

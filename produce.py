@@ -16,6 +16,10 @@ parser.add_argument("-target_dir",
                     type=str,
                     default=None,
                     help="Specify the target directory for the midi-files,\ndefaults to *path to your model*/songs/")
+parser.add_argument("-weights_filename",
+                    type=str,
+                    default="weights.hdf5",
+                    help="Specify the weights-file to load for your model,\ndefaults to 'weights.hdf5'")
 parser.add_argument("-amount",
                     type=int,
                     default=1,
@@ -25,7 +29,7 @@ args = parser.parse_args()
 
 model = MuRNN()
 
-model.load_model(args.model_path)
+model.load_model(args.model_path, weights_filename=args.weights_filename)
 
 
 for _ in range(args.amount):
