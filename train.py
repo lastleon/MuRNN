@@ -82,19 +82,31 @@ class MuRNN:
         else:
             data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(512, return_sequences=False, stateful=stateful)(data_input)
+        x = CuDNNLSTM(512, return_sequences=True, stateful=stateful)(data_input)
         x = Dropout(0.2)(x)
 
-        x = Dense(1024, activation="relu")(x)
+        x = CuDNNLSTM(512, return_sequences=False, stateful=stateful)(x)
         x = Dropout(0.2)(x)
 
-        x = Dense(1024, activation="relu")(x)
+        x = Dense(1200, activation="relu")(x)
         x = Dropout(0.2)(x)
 
+        x = Dense(1200, activation="relu")(x)
+        x = Dropout(0.2)(x)
+
+        # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
+        
+        # durations
         duration_picker = Dense(len(self.dp.duration_vocab), activation="softmax", name="duration_output")(x)
+
+        # offsets
         offset_picker = Dense(len(self.dp.offset_vocab), activation="softmax", name="offset_output")(x)
+
+        # volumes
         volume_picker = Dense(1, activation="sigmoid", name="volume_output")(x)
+
+        # tempos
         tempo_picker = Dense(1, activation="sigmoid", name="tempo_output")(x)
 
         self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
