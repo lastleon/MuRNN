@@ -240,7 +240,7 @@ class MuRNN:
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
-        return dict(zip(output_names, [smoothing * (float(sum(output_sizes)) / float(len(output_sizes) * size)) + 1  for size in output_sizes]))
+        return dict(zip(output_names, [smoothing * ((float(sum(output_sizes)) / float(len(output_sizes)*size)) - 1) + 1  for size in output_sizes]))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
