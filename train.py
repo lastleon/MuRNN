@@ -31,17 +31,24 @@ def max(array):
             curr_value = array[i]
     return curr_index, curr_value
 
-class StateResetterCallback(Callback):
+class EpochEndCallback(Callback):
 
-    def __init__(self, dataprocessor, model):
-        super(StateResetterCallback, self).__init__()
+    def __init__(self, murrn):
+        super(EpochEndCallback, self).__init__()
+        self.murrn = murrn
 
-        self.dataprocessor = dataprocessor
-        self.model = model
+    def on_epoch_end(self, batch, logs={}):
+        # save epochs trained
+        variables = None
+        with open(join(self.murrn.model_path, "variables.json"), "r") as file:
+            variables = json.load(file)
+        variables["EPOCHS_TRAINED"] = int(variables["EPOCHS_TRAINED"]) + 1
+        with open(join(self.murrn.model_path, "variables.json"), "w") as file:
+            file.write(json.dumps(variables, file))
 
-    def on_batch_end(self, batch, logs={}):
-        if self.dataprocessor.next_batch_is_new_song:
-            self.model.reset_states()
+        # make sample songs
+        for i in range(2):
+            DataProcessor.retrieve_midi_from_loaded_data(self.murrn.make_song(), target_dir=self.murrn.model_path, filename="sample-"+str(variables["EPOCHS_TRAINED"])+"-"+str(i))
 
 class MuRNN:
     
@@ -55,19 +62,16 @@ class MuRNN:
 
         self.SEQUENCE_LENGTH = -1
         self.TIMESIGNATURE = get_datetime_str()
-        self.STATEFUL = None
-
-        logging.getLogger("werkzeug").setLevel(logging.ERROR)
+        self.EPOCHS_TRAINED = 0
         
     
-    def new_model(self, data_dir, sequence_length=50, stateful=False, target_dir="./models/"):
+    def new_model(self, data_dir, sequence_length=50, target_dir="./models/"):
 
         mkdir_safely(target_dir)
         
         self.data_path = data_dir
 
         self.SEQUENCE_LENGTH = sequence_length
-        self.STATEFUL = stateful
 
         # make new model directory
         self.model_path = target_dir + "model-" + self.TIMESIGNATURE + "/"
@@ -77,22 +81,16 @@ class MuRNN:
         self.dp = DataProcessor(self.data_path)
         
         # make model
-        if stateful:
-            data_input = Input(batch_shape=(1, None, 5), name="input")
-        else:
-            data_input = Input(batch_shape=(None, None, 5), name="input")
+        data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(512, return_sequences=False, stateful=stateful)(data_input)
-        x = Dropout(0.2)(x)
+        x = CuDNNLSTM(512, return_sequences=False)(data_input)
+        x = Dropout(0.3)(x)
 
-        x = Dense(1200, activation="relu")(x)
-        x = Dropout(0.2)(x)
+        x = Dense(1024, activation="relu")(x)
+        x = Dropout(0.3)(x)
 
-        x = Dense(1200, activation="relu")(x)
-        x = Dropout(0.2)(x)
-
-        x = Dense(1200, activation="relu")(x)
-        x = Dropout(0.2)(x)
+        x = Dense(1024, activation="relu")(x)
+        x = Dropout(0.3)(x)
 
         # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -117,9 +115,12 @@ class MuRNN:
         with open(join(self.model_path, "model.json"), "w") as file:
             file.write(self.model.to_json())
         with open(join(self.model_path, "variables.json"), "w") as file:
-            file.write('{ "SEQUENCE_LENGTH" : ' + str(self.SEQUENCE_LENGTH) + ',\n' +
-                       '"TIMESIGNATURE" : "' + self.TIMESIGNATURE + '",\n' +
-                       '"STATEFUL" : "' + str(self.STATEFUL) + '" }')
+            variables = {
+                "SEQUENCE_LENGTH" : self.SEQUENCE_LENGTH,
+                "TIMESIGNATURE" : self.TIMESIGNATURE,
+                "EPOCHS_TRAINED" : self.EPOCHS_TRAINED
+            }
+            file.write(json.dumps(variables))
         
         with open(join(self.model_path, "dataprocessor.pkl"), "wb") as file:
             pickle.dump(self.dp, file)
@@ -131,21 +132,19 @@ class MuRNN:
         callbacks.append(TensorBoard(log_dir=self.model_path + "logs/", write_grads=True, write_images=True))
         #EarlyStopping
         callbacks.append(EarlyStopping(monitor="loss", min_delta=0.0002, patience=5))
-
-        if self.STATEFUL:
-            # StateResetterCallback
-            #callbacks.append(StateResetterCallback(self.dp, self.model))
-            pass
+        # EpochEndCallback
+        callbacks.append(EpochEndCallback(self))
         
         if save_every_epoch:
             # ModelCheckpoint
             callbacks.append(ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True))
         
-        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, (1 if self.STATEFUL else limit)), 
+        self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, limit), 
                                 steps_per_epoch=steps_per_epoch, 
-                                epochs=epochs, 
+                                epochs=self.EPOCHS_TRAINED + epochs,
                                 verbose=1, 
-                                callbacks=callbacks)
+                                callbacks=callbacks,
+                                initial_epoch = self.EPOCHS_TRAINED)
         
         self.model.save_weights(self.model_path + "weights.hdf5")
 
@@ -167,19 +166,21 @@ class MuRNN:
                 # for backwards-compatibility
                 self.TIMESIGNATURE = model_dir_name.replace("model-","")
             
-            if "STATEFUL" in variables.keys():
-                self.STATEFUL = bool(variables["STATEFUL"])
+            if "EPOCHS_TRAINED" in variables.keys():
+                self.EPOCHS_TRAINED = int(variables["EPOCHS_TRAINED"])
             else:
-                self.STATEFUL = False
+                # for backwards-compatibility
+                self.EPOCHS_TRAINED = 0
             
-            with open(join(self.model_path, "dataprocessor.pkl"), "rb") as file:
+            
+        with open(join(self.model_path, "dataprocessor.pkl"), "rb") as file:
                 self.dp = pickle.load(file)
 
         self.model.load_weights(join(self.model_path, weights_filename))
 
         self.compile()
     
-    def make_song(self, length):
+    def make_song(self, length=200):
         song = []
         sequence = np.ones((1, self.SEQUENCE_LENGTH, 5))
 
@@ -286,13 +287,14 @@ if __name__ == '__main__':
                         type=int,
                         default=DataProcessor.default_limit,
                         help="Set a batchsize limit as to not exceed memory capabilities of the GPU,\ndefaults to " + str(DataProcessor.default_limit))
+    parser.add_argument("-continue_training",
+                        type=str,
+                        default=None,
+                        help="Continue training the specified model\nWARNING: THE USER IS RESPONSIBLE FOR PROVIDING THE SAME DATASET AS IN THE FIRST TRAINING SESSIONS, OTHERWISE THIS WON'T WORK PROPERLY")
     parser.add_argument("-target_dir",
                         type=str,
                         default="./models/",
                         help="Specify a target directory in which your model-directory will be saved,\ndefaults to './models/'")
-    parser.add_argument("--stateful",
-                        action="store_true",
-                        help="Use this flag to indicate the network is stateful\nNote that batch size will automatically be 1")
     parser.add_argument("--save_every_epoch",
                         action="store_true",
                         help="Use this flag to save the weights of the model for each epoch")
@@ -301,7 +303,10 @@ if __name__ == '__main__':
 
     model = MuRNN()
 
-    model.new_model(args.dir, sequence_length=args.seq_len, stateful=args.stateful, target_dir=args.target_dir)
+    if args.continue_training != None:
+        model.load_model(args.continue_training)
+    else:
+        model.new_model(args.dir, sequence_length=args.seq_len, target_dir=args.target_dir)
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, limit=args.limit)
 

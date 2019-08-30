@@ -19,6 +19,7 @@ class DataProcessor:
     def __init__(self, dir_path):
 
         self.next_batch_is_new_song = None
+        self.dataset_iterations = 0
 
         # check if path to directory is valid
         if isdir(dir_path):
@@ -126,101 +127,9 @@ class DataProcessor:
                 pickle.dump(notes, f)
             return True
         return False
-
-    def train_generator_no_padding(self, sequence_length=10):
-        print(
-        """
-            DO NOT USE THIS, THIS DOES NOT WORK YET
-
-        """)
-
-
-        raise NotImplementedError
-        
-        
-        #############   PRODUCED DATA:
-        #### x_train:
-        # SHAPE: (batch_size, sequence_length, features)
-        # [batch_size]      number of shifts + 1 (because of the initial state), example (with sequence_length=2):
-        #                   [C  E] D  E  A    // + 1
-        #                    C [E  D] E  A    // shift 1
-        #                    C  E [D  E] A    // shift 2
-        #                    C  E  D [E  A]   // shift 3
-        #                    -----------------//--------
-        #                                          4 
-        # [sequence_length] number of timesteps in a single datapoint in a batch, example:
-        #                   [C  E] D  E  A  --> sequence_length = 2
-        #                   [C  E  D] E  A  --> sequence_length = 3
-        #                   [C  E  D  E] A  --> sequence_length = 4
-        #                   ...
-        # [features]        note converted to num and normalized with vocab size --> always 1
-
-        ############# FAILSAFE
-        # --> GPU-memory capabilities aren't exceeded
-        # if the computed batch_size is greater than LIMIT,
-        # then the data is split into three sub-arrays of 
-        # about the same size, but where each array-length is
-        # less than LIMIT. These sub-arrays are yielded seperately,
-        # only after the last sub-array has been yielded a new song
-        # is loaded
-
-
-        remainder = []
-
-        while True:
-            if len(remainder) == 0:
-                # random file chosen and loaded
-                filename = splitext(random.choice(self.files))[0]
-                music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
-                
-                # sequence length shouldn't be larger than the whole music data array
-                if len(music_data) < sequence_length:
-                    sequence_length = len(music_data)
-
-                # batch_size is number of shifts of the training data array + 1
-                batch_size = len(music_data) - sequence_length + 1
-
-                ## shape of training data is (batch_size, timesteps, features)
-                # x_train example with batch_size = 2 and timesteps = 3: 
-                # [ 
-                #   [0.123, 0.125, 0.520],
-                #   [0.125, 0.520, 1.000]
-                # ]
-                # ---> encoded notes
-                #
-                # y_train example with batch_size = 2 and len(vocab) = 5:
-                # [
-                #   [0.000, 0.000, 1.000, 0.000, 0.000],
-                #   [0.000, 0.000, 0.000, 0.000, 1.000]
-                # ]
-                # ---> probability of a note
-                
-                x_train = np.ones((batch_size, sequence_length, 1))
-                y_train = np.zeros((batch_size, len(self.vocab)))
-
-                for i in range(batch_size): 
-                    for j in range(sequence_length):
-                        note = music_data[i+j]    
-                        # numerical representation of note/chord, normalized
-                        x_train[i][j][0] = float(self.note_to_num(note)) / float(len(self.vocab))
-
-                    if i == batch_size-1:
-                        y_train[i] = np.zeros(len(self.vocab))
-                    else:
-                        note = music_data[i+sequence_length]
-                        y_train[i][self.note_to_num(note)] = 1.0
-                
-                if batch_size > self.LIMIT:
-                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/self.LIMIT)), np.array_split(y_train, np.ceil(len(y_train)/self.LIMIT))))
-                    x_train, y_train = remainder.pop()
-
-            else:
-                x_train, y_train = remainder.pop()
-                
-            yield x_train, y_train
                     
                     
-    def train_generator_with_padding(self, sequence_length=10, LIMIT=default_limit):
+    def train_generator_with_padding(self, sequence_length=50, LIMIT=default_limit):
 
         #############   PRODUCED DATA:
         #### x_train:
@@ -240,14 +149,28 @@ class DataProcessor:
         # [features]        note converted to num and normalized with vocab size --> always 1
 
         ############# FAILSAFE
-        # --> description in train_generator_no_padding
+        # --> GPU-memory capabilities aren't exceeded
+        # if the computed batch_size is greater than LIMIT,
+        # then the data is split into three sub-arrays of 
+        # about the same size, but where each array-length is
+        # less than LIMIT. These sub-arrays are yielded seperately,
+        # only after the last sub-array has been yielded a new song
+        # is loaded
 
         remainder = []
+
+        file_queue = self.files.copy()
 
         while True:
             if len(remainder) == 0:
                 # random file chosen and loaded
-                filename = splitext(random.choice(self.files))[0]
+                filename = splitext(file_queue.pop())[0]
+
+                if len(file_queue) == 0:
+                    file_queue = self.files.copy()
+                    self.dataset_iterations += 1
+                    print("Dataset iterations: " + str(self.dataset_iterations))
+
                 music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
 
                 # batch_size is number of shifts of the training data array
@@ -325,7 +248,7 @@ class DataProcessor:
             return None    
 
     @staticmethod
-    def retrieve_midi_from_loaded_data(data, target_dir="./"):
+    def retrieve_midi_from_loaded_data(data, target_dir="./", filename=None):
         
         mkdir_safely(target_dir)
 
@@ -354,7 +277,11 @@ class DataProcessor:
                     stream.insert(curr_offset, music21.tempo.MetronomeMark(number=tempo))
 
             stream.insert(curr_offset, note, ignoreSort=True)
-            file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
+
+            if filename != None:
+                file_path = join(target_dir, filename + ".mid")
+            else:
+                file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
         stream.write('midi', fp=file_path)
         print("File saved at '" + file_path + "'...")
         
