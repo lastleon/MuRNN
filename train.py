@@ -83,14 +83,15 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(512, return_sequences=False)(data_input)
+        x = CuDNNLSTM(512, return_sequences=True)(data_input)
+        x = CuDNNLSTM(512, return_sequences=False)(x)
         x = Dropout(0.3)(x)
 
         x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.3)(x)
+        x = Dropout(0.4)(x)
 
         x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.3)(x)
+        x = Dropout(0.4)(x)
 
         # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -237,13 +238,13 @@ class MuRNN:
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
                   "offset_output" : "categorical_crossentropy",
-                  "volume_output" : "mean_absolute_error",
-                  "tempo_output" : "mean_absolute_error"},
+                  "volume_output" : "mse",
+                  "tempo_output" : "mse"},
             loss_weights=self.get_lossweights(),
             optimizer="adam",
             metrics=["accuracy"])
     
-    def get_lossweights(self, smoothing=0.3):
+    def get_lossweights(self, smoothing=0.4):
 
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
