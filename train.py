@@ -88,10 +88,10 @@ class MuRNN:
         x = Dropout(0.3)(x)
 
         x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.4)(x)
+        x = Dropout(0.3)(x)
 
         x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.4)(x)
+        x = Dropout(0.3)(x)
 
         # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -233,7 +233,7 @@ class MuRNN:
         return song
         
     def compile(self):
-        print(self.get_lossweights())
+        opt = tf.keras.optimizers.RMSprop(0.001)
         self.model.compile(
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
@@ -241,7 +241,7 @@ class MuRNN:
                   "volume_output" : "mse",
                   "tempo_output" : "mse"},
             loss_weights=self.get_lossweights(),
-            optimizer="adam",
+            optimizer=opt,
             metrics=["accuracy"])
     
     def get_lossweights(self, smoothing=0.4):
@@ -253,7 +253,7 @@ class MuRNN:
                         1]
         
         ## Hyperparameter
-        weights = [0.4, 0.15, 0.15, 0.15, 0.15]
+        weights = [0.6, 0.1, 0.1, 0.1, 0.1]
 
         output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
 
