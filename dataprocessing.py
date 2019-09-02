@@ -107,7 +107,7 @@ class DataProcessor:
                     
                 pitches = note.pitches
                 pitch_names = []
-                
+                ## sorting of pitchnames isn't really necessary anymore, but probably helps in training
                 # add pitchnames to list, if note is a chord (has more than one pitch) then they are first sorted
                 # if a pitch is ambiguous (e.g. C# <-> D-), then the (alphabetically) first name is chosen
                 for i in range(len(pitches)):
@@ -119,9 +119,9 @@ class DataProcessor:
                         pitch_names.append(pitches[i].nameWithOctave)
                 
                 pitch_names.sort()
-                pitch_name_string = ",".join(pitch_names)
-            
-                notes.append((pitch_name_string, note_duration, note_offset, note_volume, note_tempo))
+
+                for i in range(len(pitch_names)):
+                    notes.append((pitch_names[i], note_duration, note_offset if i==0 else 0.0, note_volume, note_tempo))
             
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)

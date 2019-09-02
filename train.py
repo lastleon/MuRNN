@@ -87,10 +87,10 @@ class MuRNN:
         x = CuDNNLSTM(512, return_sequences=False)(x)
         x = Dropout(0.3)(x)
 
-        x = Dense(1024, activation="relu")(x)
+        x = Dense(512, activation="relu")(x)
         x = Dropout(0.3)(x)
 
-        x = Dense(1024, activation="relu")(x)
+        x = Dense(512, activation="relu")(x)
         x = Dropout(0.3)(x)
 
         # notes
