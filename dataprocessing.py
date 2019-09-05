@@ -37,6 +37,15 @@ class DataProcessor:
 
         complete_filelist = listdir(self.dir_path)
 
+        # transpose the pieces
+        for file in complete_filelist:
+            f_name, f_extension = splitext(file)
+
+            if not ("-transposed-" in f_name) and (f_extension == ".midi" or f_extension == ".mid"):
+                DataProcessor.transpose_on_octaves(join(self.dir_path, f_name + f_extension))
+        
+        complete_filelist = listdir(self.dir_path)
+                
         # if a file is of type mid(i), then its
         # name is saved in 'files'
         for file in complete_filelist:
@@ -120,10 +129,9 @@ class DataProcessor:
                 
                 pitch_names.sort()
 
-                joined_pitch_names = ",".join(pitch_names)
-                
-                notes.append((joined_pitch_names, note_duration, note_offset, note_volume, note_tempo))
-            
+                for i in range(len(pitch_names)):
+                    notes.append((pitch_names[i], note_duration, note_offset if i==0 else 0.0, note_volume, note_tempo))  
+
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)
             return True
@@ -360,5 +368,25 @@ class DataProcessor:
             return round(float(((Decimal(value.split("/")[0]) / Decimal(value.split("/")[1])) / DataProcessor.twelfth)))
         else:
             return round(float(Decimal(value) / DataProcessor.twelfth))
+    
+    @staticmethod
+    def transpose_on_octaves(file_path, up=1, down=1):
+        stream = music21.converter.parse(file_path).flat.sorted
+        
+        split_path = splitext(file_path)
+
+        for i in range(1, up+1):
+            interval = "P"+str(1 + 7*i)
+            up_transpose = stream.transpose(interval)
+            fp = split_path[0] + "-transposed-" + interval + split_path[1]
+            up_transpose.write("midi", fp=fp)
+            print("Saved transposed piece under filepath '" + fp + "'...")
+
+        for i in range(1, down+1):
+            interval = "P-"+str(1 + 7*i)
+            up_transpose = stream.transpose(interval)
+            fp = split_path[0] + "-transposed-" + interval + split_path[1]
+            up_transpose.write("midi", fp=split_path[0] + "-" + interval + split_path[1])
+            print("Saved transposed piece under filepath '" + fp + "'...")
 
     
