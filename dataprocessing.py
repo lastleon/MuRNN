@@ -120,8 +120,9 @@ class DataProcessor:
                 
                 pitch_names.sort()
 
-                for i in range(len(pitch_names)):
-                    notes.append((pitch_names[i], note_duration, note_offset if i==0 else 0.0, note_volume, note_tempo))
+                joined_pitch_names = ",".join(pitch_names)
+                
+                notes.append((joined_pitch_names, note_duration, note_offset, note_volume, note_tempo))
             
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)

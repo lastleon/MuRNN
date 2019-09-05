@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
-from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout
+from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout, Bidirectional
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, LambdaCallback, Callback
 
 from tensorboard import default
@@ -83,14 +83,22 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = CuDNNLSTM(512, return_sequences=True)(data_input)
-        x = CuDNNLSTM(512, return_sequences=False)(x)
+        x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(data_input)
+        x = Dropout(0.1)(x)
+
+        x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
+        x = Dropout(0.1)(x)
+
+        x = CuDNNLSTM(256)(x)
         x = Dropout(0.3)(x)
 
-        x = Dense(512, activation="relu")(x)
+        x = Dense(1024, activation="relu")(x)
         x = Dropout(0.3)(x)
 
-        x = Dense(512, activation="relu")(x)
+        x = Dense(1024, activation="relu")(x)
+        x = Dropout(0.3)(x)
+
+        x = Dense(1024, activation="relu")(x)
         x = Dropout(0.3)(x)
 
         # notes
