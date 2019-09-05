@@ -4,7 +4,7 @@ import numpy as np
 import random # may not be random enough
 from decimal import Decimal
 
-from os.path import isdir, isfile, join, splitext
+from os.path import isdir, isfile, join, splitext, exists
 from os import listdir
 import pickle
 import glob
@@ -54,9 +54,6 @@ class DataProcessor:
             if f_extension == ".midi" or f_extension == ".mid":
                 files.append(file)
 
-        # track how many files are created
-        created_files_counter = 0
-
         # iterate over all of the mid(i) files
         for file in files.copy():
             # if a there is no .mu file to a midi file, it will be created 
@@ -65,7 +62,6 @@ class DataProcessor:
                 # if not possible, the filename is removed from 'files'
                 if self.create_processed_file(join(self.dir_path, file)):
                     print("File '" + splitext(file)[0] + ".mu' was created...")
-                    created_files_counter += 1
                 else:
                     files.remove(file)
 
@@ -86,7 +82,6 @@ class DataProcessor:
             print("Note vocab: " + str(len(self.note_vocab)) + "  Duration vocab: " + str(len(self.duration_vocab))
                 + "  Offset vocab: " + str(len(self.offset_vocab)) 
                 + "  TOTAL: " + str(len(self.note_vocab)+len(self.duration_vocab)+len(self.offset_vocab)))
-            print(str(created_files_counter) + (" new file was created" if created_files_counter == 1 else " new files were created"))
             print("Finished!")
     
     def create_processed_file(self, f_path):
@@ -371,22 +366,26 @@ class DataProcessor:
     
     @staticmethod
     def transpose_on_octaves(file_path, up=1, down=1):
+        if up < 0:
+            up = 0
+        if down < 0:
+            down = 0
+
         stream = music21.converter.parse(file_path).flat.sorted
         
         split_path = splitext(file_path)
 
-        for i in range(1, up+1):
-            interval = "P"+str(1 + 7*i)
-            up_transpose = stream.transpose(interval)
-            fp = split_path[0] + "-transposed-" + interval + split_path[1]
-            up_transpose.write("midi", fp=fp)
-            print("Saved transposed piece under filepath '" + fp + "'...")
+        for i in range(-down, up+1):
+            if i < 0:
+                interval = "P" + str(-1 + 7*i)
+            elif i > 0:
+                interval = "P" + str(1 + 7*i)
+            else:
+                continue
 
-        for i in range(1, down+1):
-            interval = "P-"+str(1 + 7*i)
-            up_transpose = stream.transpose(interval)
             fp = split_path[0] + "-transposed-" + interval + split_path[1]
-            up_transpose.write("midi", fp=split_path[0] + "-" + interval + split_path[1])
-            print("Saved transposed piece under filepath '" + fp + "'...")
-
+            if not exists(fp):
+                up_transpose = stream.transpose(interval)
+                up_transpose.write("midi", fp=fp)
+                print("Saved transposed piece under filepath '" + fp + "'...")
     
