@@ -42,7 +42,7 @@ class DataProcessor:
             f_name, f_extension = splitext(file)
 
             if not ("-transposed-" in f_name) and (f_extension == ".midi" or f_extension == ".mid"):
-                DataProcessor.transpose_on_octaves(join(self.dir_path, f_name + f_extension))
+                DataProcessor.transpose_on_octaves(join(self.dir_path, f_name + f_extension), up=0, down=0)
         
         complete_filelist = listdir(self.dir_path)
                 
@@ -105,7 +105,7 @@ class DataProcessor:
                 note_offset = float(self.quarterLength_to_int_representation(str(note.offset)) - previous_offset)
                 previous_offset = float(self.quarterLength_to_int_representation(str(note.offset)))
 
-                note_volume = float(note.volume.getRealized())
+                note_volume = float(note.volume.velocityScalar)
 
                 note_tempo = float(note.getContextByClass("MetronomeMark").number)
                     
@@ -131,7 +131,129 @@ class DataProcessor:
                 pickle.dump(notes, f)
             return True
         return False
+
+    def train_generator_no_padding(self, sequence_length=50, LIMIT=default_limit):
+
+        ## could be done better, this is kind of a hack
+
+        #############   PRODUCED DATA:
+        #### x_train:
+        # SHAPE: (batch_size, sequence_length, features)
+        # [batch_size]      numeber of shifts in data (which is the length), example (with sequence_length=2):
+        #                   [0  E] D  E  A    // + 1
+        #                    0 [E  D] E  A    // shift 1
+        #                    0  E [D  E] A    // shift 2
+        #                    0  E  D [E  A]   // shift 3
+        #                    -----------------//--------
+        #                                          4
+        # [sequence_length] number of timesteps in a single datapoint in a batch, example:
+        #                   [C  E] D  E  A  --> sequence_length = 2
+        #                   [C  E  D] E  A  --> sequence_length = 3
+        #                   [C  E  D  E] A  --> sequence_length = 4
+        #                   ...
+        # [features]        note converted to num and normalized with vocab size --> always 1
+
+        ############# FAILSAFE
+        # --> GPU-memory capabilities aren't exceeded
+        # if the computed batch_size is greater than LIMIT,
+        # then the data is split into three sub-arrays of 
+        # about the same size, but where each array-length is
+        # less than LIMIT. These sub-arrays are yielded seperately,
+        # only after the last sub-array has been yielded a new song
+        # is loaded
+
+        remainder = []
+
+        file_queue = self.files.copy()
+
+        while True:
+            if len(remainder) == 0:
+                # random file chosen and loaded
+                filename = splitext(file_queue.pop())[0]
+
+                if len(file_queue) == 0:
+                    file_queue = self.files.copy()
+                    self.dataset_iterations += 1
+                    print("Dataset iterations: " + str(self.dataset_iterations))
+
+                music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
+
+                # batch_size is number of shifts of the training data array
+                batch_size = min(len(music_data) - sequence_length + 1, 1)
+
+                ## shape of training data is (batch_size, timesteps, features)
+                # x_train example with batch_size = 2 and timesteps = 3: 
+                # [ 
+                #   [0.000, 0.000, 0.520],
+                #   [0.000, 0.520, 0.500]
+                # ]
+                # ---> encoded notes with padding
+                #
+                # y_train example with batch_size = 2 and len(vocab) = 5:
+                # [
+                #   [0.000, 0.000, 1.000, 0.000, 0.000],
+                #   [0.000, 0.000, 0.000, 0.000, 1.000]
+                # ]
+                # ---> probability of a note
+                
+                x_train = np.ones((batch_size, sequence_length, 5))
+
+                y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
+                y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
+                y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
+                y_train_volume = np.zeros((batch_size, 1))
+                y_train_tempo = np.zeros((batch_size, 1))
+
+                initial_increment = min(sequence_length, len(music_data))
+                for i in range(initial_increment):
+                    # shift batches in x_train one step to the left
+                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    # add new note/duration/offset/volume/tempo
+                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+
+                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
+                    x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
+                    x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
+                    x_train[-1][-1][3] = float(music_data[i][3])
+                    x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
+
+                for i in range(initial_increment, initial_increment + batch_size):
+                    # shift batches in x_train one step to the left
+                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    # add new note/duration/offset/volume/tempo
+                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+
+                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
+                    x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
+                    x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
+                    x_train[-1][-1][3] = float(music_data[i][3])
+                    x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
+
+                    if i != batch_size+initial_increment-1:
+                        y_train_notes[i-initial_increment][self.note_to_num(music_data[i+1][0])] = 1.0
+                        y_train_duration[i-initial_increment][self.duration_to_num(music_data[i+1][1])] = 1.0
+                        y_train_offset[i-initial_increment][self.offset_to_num(music_data[i+1][2])] = 1.0
+                        y_train_volume[i-initial_increment][0] = music_data[i+1][3]
+                        y_train_tempo[i-initial_increment][0] = float(music_data[i+1][4]) / float(self.max_tempo)
+                
+                if batch_size > LIMIT:
+                    remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), 
+                                         np.array_split(y_train_notes, np.ceil(len(y_train_notes)/LIMIT)),
+                                         np.array_split(y_train_duration, np.ceil(len(y_train_duration)/LIMIT)),
+                                         np.array_split(y_train_offset, np.ceil(len(y_train_offset)/LIMIT)),
+                                         np.array_split(y_train_volume, np.ceil(len(y_train_volume)/LIMIT)),
+                                         np.array_split(y_train_tempo, np.ceil(len(y_train_tempo)/LIMIT))))
                     
+                    x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
+
+            else:
+                x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
+            
+            
+            self.next_batch_is_new_song = len(remainder) == 0
+            
+            yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo]
+
                     
     def train_generator_with_padding(self, sequence_length=50, LIMIT=default_limit):
 

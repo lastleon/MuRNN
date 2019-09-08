@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
-from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout, Bidirectional
+from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout, Bidirectional, LeakyReLU
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, LambdaCallback, Callback
 
 from tensorboard import default
@@ -83,23 +83,15 @@ class MuRNN:
         # make model
         data_input = Input(batch_shape=(None, None, 5), name="input")
 
-        x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(data_input)
-        x = Dropout(0.1)(x)
+        x = CuDNNLSTM(256, return_sequences=True)(data_input)
 
-        x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
-        x = Dropout(0.1)(x)
+        x = Bidirectional(CuDNNLSTM(256, return_sequences=False))(x)
 
-        x = CuDNNLSTM(256)(x)
-        x = Dropout(0.3)(x)
+        x = Dense(512)(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.3)(x)
-
-        x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.3)(x)
-
-        x = Dense(1024, activation="relu")(x)
-        x = Dropout(0.3)(x)
+        x = Dense(512)(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
         # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
@@ -241,7 +233,7 @@ class MuRNN:
         return song
         
     def compile(self):
-        opt = tf.keras.optimizers.RMSprop(0.001)
+        opt = tf.keras.optimizers.Adadelta()
         self.model.compile(
             loss={"note_output" : "categorical_crossentropy",
                   "duration_output" : "categorical_crossentropy",
