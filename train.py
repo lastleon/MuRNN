@@ -84,14 +84,16 @@ class MuRNN:
         data_input = Input(batch_shape=(None, None, 5), name="input")
 
         x = CuDNNLSTM(256, return_sequences=True)(data_input)
-
+        x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
         x = Bidirectional(CuDNNLSTM(256, return_sequences=False))(x)
 
         x = Dense(512)(x)
         x = LeakyReLU(alpha=0.2)(x)
+        x = Dropout(0.3)(x)
 
         x = Dense(512)(x)
         x = LeakyReLU(alpha=0.2)(x)
+        x = Dropout(0.3)(x)
 
         # notes
         note_picker = Dense(len(self.dp.note_vocab), activation="softmax", name="note_output")(x)
