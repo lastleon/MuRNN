@@ -9,7 +9,7 @@ from os import listdir
 import pickle
 import glob
 
-from utils import mkdir_safely, get_datetime_str
+from utils import mkdir_safely, get_datetime_str, roll_and_add_zeros
 
 class DataProcessor:
 
@@ -207,9 +207,9 @@ class DataProcessor:
                 initial_increment = min(sequence_length, len(music_data))
                 for i in range(initial_increment):
                     # shift batches in x_train one step to the left
-                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    x_train = roll_and_add_zeros(x_train)
                     # add new note/duration/offset/volume/tempo
-                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+                    x_train[-1] = roll_and_add_zeros(x_train[-2])
 
                     x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
                     x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
@@ -219,9 +219,9 @@ class DataProcessor:
 
                 for i in range(initial_increment, initial_increment + batch_size):
                     # shift batches in x_train one step to the left
-                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    x_train = roll_and_add_zeros(x_train)
                     # add new note/duration/offset/volume/tempo
-                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+                    x_train[-1] = roll_and_add_zeros(x_train[-2])
 
                     x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
                     x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
@@ -327,9 +327,9 @@ class DataProcessor:
 
                 for i in range(batch_size):
                     # shift batches in x_train one step to the left
-                    x_train = np.roll(x_train, -x_train.shape[1]*x_train.shape[2])
+                    x_train = roll_and_add_zeros(x_train)
                     # add new note/duration/offset/volume/tempo
-                    x_train[-1] = np.roll(x_train[-2], -x_train.shape[2])
+                    x_train[-1] = roll_and_add_zeros(x_train[-2])
 
                     x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
                     x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
