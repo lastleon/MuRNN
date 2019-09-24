@@ -81,10 +81,10 @@ class MuRNN:
         self.dp = DataProcessor(self.data_path)
         
         # make model
-        data_input = Input(batch_shape=(None, None, 5), name="input")
+        data_input = Input(batch_shape=(None, None, 6), name="input")
 
         x = TimeDistributed(Dense(10))(data_input)
-        x = LeakyReLU(alpha=0.2)
+        x = LeakyReLU(alpha=0.2)(x)
 
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
@@ -113,7 +113,10 @@ class MuRNN:
         # tempos
         tempo_picker = Dense(1, activation="sigmoid", name="tempo_output")(x)
 
-        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
+        # belongs to prev chord
+        prev_chord_picker = Dense(2, activation="softmax", name="belongs_to_prev_chord_output")(x)
+
+        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker, prev_chord_picker])
         self.compile()
 
     def train(self, steps_per_epoch, epochs, save_every_epoch=False, limit=DataProcessor.default_limit):
@@ -188,7 +191,7 @@ class MuRNN:
     
     def make_song(self, length=200):
         song = []
-        sequence = np.ones((1, self.SEQUENCE_LENGTH, 5))
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 6))
 
         random_note = random.randrange(0, len(self.dp.note_vocab))
         sequence[0][-1][0] =  float(random_note) / float(len(self.dp.note_vocab))
@@ -205,14 +208,17 @@ class MuRNN:
         random_tempo = random.random()
         sequence[0][-1][4] = random_tempo
 
+        sequence[0][-1][5] = 0.0
+
         song.append((self.dp.num_to_note(random_note),
                      self.dp.num_to_duration(random_duration),
                      self.dp.num_to_offset(random_offset),
                      random_volume,
-                     random_tempo))
+                     random_tempo,
+                     0.0))
 
         for i in range(length-1):
-            note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction = self.model.predict(sequence)
+            note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction, belongs_to_prev_chord_prediction = self.model.predict(sequence)
 
             note_index = max(note_prediction[0])[0]
             duration_index = max(duration_prediction[0])[0]
@@ -220,12 +226,15 @@ class MuRNN:
 
             volume_prediction = volume_prediction[0][0]
             tempo_prediction = tempo_prediction[0][0]
+
+            belongs_to_prev_chord_index = max(belongs_to_prev_chord_prediction[0])[0]
             
             song.append((self.dp.num_to_note(note_index),
                          self.dp.num_to_duration(duration_index),
                          self.dp.num_to_offset(offset_index),
                          volume_prediction,
-                         tempo_prediction))
+                         tempo_prediction,
+                         float(belongs_to_prev_chord_index)))
 
             sequence = np.roll(sequence, -sequence.shape[2])
 
@@ -234,6 +243,7 @@ class MuRNN:
             sequence[0][-1][2] = offset_index / len(self.dp.offset_vocab)
             sequence[0][-1][3] = volume_prediction
             sequence[0][-1][4] = tempo_prediction
+            sequence[0][-1][5] = float(belongs_to_prev_chord_index)
 
         return song
         
@@ -244,7 +254,8 @@ class MuRNN:
                   "duration_output" : "categorical_crossentropy",
                   "offset_output" : "categorical_crossentropy",
                   "volume_output" : "mse",
-                  "tempo_output" : "mse"},
+                  "tempo_output" : "mse",
+                  "belongs_to_prev_chord_output" : "binary_crossentropy"},
             loss_weights=self.get_lossweights(),
             optimizer=opt,
             metrics=["accuracy"])
@@ -255,12 +266,13 @@ class MuRNN:
                         len(self.dp.duration_vocab),
                         len(self.dp.offset_vocab),
                         1,
-                        1]
+                        1,
+                        2]
         
         ## Hyperparameter
-        weights = [0.6, 0.1, 0.1, 0.1, 0.1]
+        weights = [0.5, 0.1, 0.1, 0.1, 0.1, 0.1]
 
-        output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
+        output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output", "belongs_to_prev_chord_output"]
 
         output_weights = []
 

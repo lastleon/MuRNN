@@ -114,9 +114,11 @@ class DataProcessor:
                         pitch_names.append(pitches[i].nameWithOctave)
                 
                 pitch_names.sort()
-                joined_pitches = ",".join(pitch_names)
+                #joined_pitches = ",".join(pitch_names)
 
-                notes.append((joined_pitches, note_duration, note_offset, note_volume, note_tempo))  
+                #notes.append((joined_pitches, note_duration, note_offset, note_volume, note_tempo))
+                for i in range(len(pitch_names)):
+                    notes.append((pitch_names[i], note_duration, note_offset if i==0 else 0.0, note_volume, note_tempo, 0.0 if i==0 else 1.0))  
 
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)
@@ -124,7 +126,7 @@ class DataProcessor:
         return False
 
     def train_generator_no_padding(self, sequence_length=50, LIMIT=default_limit):
-
+        raise NotImplementedError("Not yet implemented")
         ## could be done better, this is kind of a hack
 
         #############   PRODUCED DATA:
@@ -308,13 +310,14 @@ class DataProcessor:
                 # ]
                 # ---> probability of a note
                 
-                x_train = np.ones((batch_size, sequence_length, 5))
+                x_train = np.ones((batch_size, sequence_length, 6))
 
                 y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
                 y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
                 y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
                 y_train_volume = np.zeros((batch_size, 1))
                 y_train_tempo = np.zeros((batch_size, 1))
+                y_train_belongs_to_prev_chord = np.zeros((batch_size, 2))
 
                 for i in range(batch_size):
                     # shift batches in x_train one step to the left
@@ -327,6 +330,7 @@ class DataProcessor:
                     x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
                     x_train[-1][-1][3] = float(music_data[i][3])
                     x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
+                    x_train[-1][-1][5] = float(music_data[i][5])
 
                     if i != batch_size-1:
                         y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
@@ -334,6 +338,7 @@ class DataProcessor:
                         y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
                         y_train_volume[i][0] = music_data[i+1][3]
                         y_train_tempo[i][0] = float(music_data[i+1][4]) / float(self.max_tempo)
+                        y_train_belongs_to_prev_chord[i][int(music_data[i+1][5])] = 1.0
                 
                 if batch_size > LIMIT:
                     remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), 
@@ -341,17 +346,18 @@ class DataProcessor:
                                          np.array_split(y_train_duration, np.ceil(len(y_train_duration)/LIMIT)),
                                          np.array_split(y_train_offset, np.ceil(len(y_train_offset)/LIMIT)),
                                          np.array_split(y_train_volume, np.ceil(len(y_train_volume)/LIMIT)),
-                                         np.array_split(y_train_tempo, np.ceil(len(y_train_tempo)/LIMIT))))
+                                         np.array_split(y_train_tempo, np.ceil(len(y_train_tempo)/LIMIT)),
+                                         np.array_split(y_train_belongs_to_prev_chord, np.ceil(len(y_train_belongs_to_prev_chord)/LIMIT))))
                     
-                    x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
+                    x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord = remainder.pop()
 
             else:
-                x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo = remainder.pop()
+                x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord = remainder.pop()
             
             
             self.next_batch_is_new_song = len(remainder) == 0
             
-            yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo]
+            yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord]
 
     # STRUCTURE OF THE LOADED FILE
     # --> see create_processed_file
@@ -372,7 +378,7 @@ class DataProcessor:
         stream = music21.stream.Stream()
         curr_offset = 0.0
         for tup in data:
-            pitch, duration, offset, volume, tempo = tup
+            pitch, duration, offset, volume, tempo, belongs_to_prev_chord = tup
             
             # transform the values back into their original forms
             duration = DataProcessor.int_representation_to_quarterLength(float(duration))
