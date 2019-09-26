@@ -61,7 +61,7 @@ class DataProcessor:
             if not splitext(file)[0] + ".mu" in complete_filelist:
                 # if not possible, the filename is removed from 'files'
                 if self.create_processed_file(join(self.dir_path, file)):
-                    print("File '" + splitext(file)[0] + ".mu' was created...")
+                    print("File '/" + splitext(file)[0] + ".mu' was created...")
                 else:
                     files.remove(file)
 
@@ -133,7 +133,7 @@ class DataProcessor:
                 pickle.dump(notes, f)
             return True
         return False
-
+    """
     def train_generator_no_padding(self, sequence_length=50, LIMIT=default_limit):
         raise NotImplementedError("Not yet implemented")
         ## could be done better, this is kind of a hack
@@ -255,7 +255,7 @@ class DataProcessor:
             self.next_batch_is_new_song = len(remainder) == 0
             
             yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo]
-
+    """
                     
     def train_generator_with_padding(self, sequence_length=50, LIMIT=default_limit):
 
@@ -285,6 +285,15 @@ class DataProcessor:
         # only after the last sub-array has been yielded a new song
         # is loaded
 
+        mkdir_safely(join(self.dir_path, "temp_converted"))
+
+        for filename in self.files.copy():
+            if self.convert_to_network_input_file(splitext(filename)[0], sequence_length):
+                print("\nFile './temp_converted/" + splitext(filename)[0] + ".converted' was created...")
+            else:
+                del self.files[self.files.index(filename)]
+                print("\nRemoved './temp_converted/" + splitext(filename)[0] + ".mu', as the network input file could not be created...")
+
         remainder = []
 
         file_queue = self.files.copy()
@@ -293,61 +302,15 @@ class DataProcessor:
             if len(remainder) == 0:
                 # random file chosen and loaded
                 filename = splitext(file_queue.pop())[0]
-
+                x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord = DataProcessor.load_temp_converted_file(join(self.dir_path, "temp_converted/" + filename + ".converted"))
+                
+                print(x_train[0])
+                batch_size = len(x_train)
+                print(batch_size)
                 if len(file_queue) == 0:
                     file_queue = self.files.copy()
                     self.dataset_iterations += 1
                     print("Dataset iterations: " + str(self.dataset_iterations))
-
-                music_data = DataProcessor.load_processed_file(join(self.dir_path, filename + ".mu"))
-
-                # batch_size is number of shifts of the training data array
-                batch_size = len(music_data)
-
-                ## shape of training data is (batch_size, timesteps, features)
-                # x_train example with batch_size = 2 and timesteps = 3: 
-                # [ 
-                #   [0.000, 0.000, 0.520],
-                #   [0.000, 0.520, 0.500]
-                # ]
-                # ---> encoded notes with padding
-                #
-                # y_train example with batch_size = 2 and len(vocab) = 5:
-                # [
-                #   [0.000, 0.000, 1.000, 0.000, 0.000],
-                #   [0.000, 0.000, 0.000, 0.000, 1.000]
-                # ]
-                # ---> probability of a note
-                
-                x_train = np.ones((batch_size, sequence_length, 6))
-
-                y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
-                y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
-                y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
-                y_train_volume = np.zeros((batch_size, 1))
-                y_train_tempo = np.zeros((batch_size, 1))
-                y_train_belongs_to_prev_chord = np.zeros((batch_size, 2))
-
-                for i in range(batch_size):
-                    # shift batches in x_train one step to the left
-                    x_train = roll_and_add_zeros(x_train)
-                    # add new note/duration/offset/volume/tempo
-                    x_train[-1] = roll_and_add_zeros(x_train[-2])
-
-                    x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
-                    x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
-                    x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
-                    x_train[-1][-1][3] = float(music_data[i][3])
-                    x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
-                    x_train[-1][-1][5] = float(music_data[i][5])
-
-                    if i != batch_size-1:
-                        y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
-                        y_train_duration[i][self.duration_to_num(music_data[i+1][1])] = 1.0
-                        y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
-                        y_train_volume[i][0] = music_data[i+1][3]
-                        y_train_tempo[i][0] = float(music_data[i+1][4]) / float(self.max_tempo)
-                        y_train_belongs_to_prev_chord[i][int(music_data[i+1][5])] = 1.0
                 
                 if batch_size > LIMIT:
                     remainder = list(zip(np.array_split(x_train, np.ceil(len(x_train)/LIMIT)), 
@@ -372,7 +335,7 @@ class DataProcessor:
     # --> see create_processed_file
     @staticmethod
     def load_processed_file(f_path):
-        if isfile(f_path)and splitext(f_path)[1] == ".mu":
+        if isfile(f_path) and splitext(f_path)[1] == ".mu":
             with open(f_path, "rb") as f:
                 return pickle.load(f)
         else:
@@ -416,6 +379,72 @@ class DataProcessor:
                 file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
         stream.write('midi', fp=file_path)
         print("File saved at '" + file_path + "'...")
+
+    @staticmethod
+    def load_temp_converted_file(f_path):
+        if isfile(f_path) and splitext(f_path)[1] == ".converted":
+            with open(f_path, "rb") as f:
+                return pickle.load(f)
+        else:
+            print("File with path '" + f_path + "' could not be loaded...")
+            return None
+
+    def convert_to_network_input_file(self, f_name, sequence_length):
+        if exists(join(self.dir_path, f_name + ".mu")):
+            music_data = DataProcessor.load_processed_file(join(self.dir_path, f_name + ".mu"))
+
+            # batch_size is number of shifts of the training data array
+            batch_size = len(music_data)
+
+            ## shape of training data is (batch_size, timesteps, features)
+            # x_train example with batch_size = 2 and timesteps = 3: 
+            # [ 
+            #   [0.000, 0.000, 0.520],
+            #   [0.000, 0.520, 0.500]
+            # ]
+            # ---> encoded notes with padding
+            #
+            # y_train example with batch_size = 2 and len(vocab) = 5:
+            # [
+            #   [0.000, 0.000, 1.000, 0.000, 0.000],
+            #   [0.000, 0.000, 0.000, 0.000, 1.000]
+            # ]
+            # ---> probability of a note
+            
+            x_train = np.ones((batch_size, sequence_length, 6))
+
+            y_train_notes = np.zeros((batch_size, len(self.note_vocab)))
+            y_train_duration = np.zeros((batch_size, len(self.duration_vocab)))
+            y_train_offset = np.zeros((batch_size, len(self.offset_vocab)))
+            y_train_volume = np.zeros((batch_size, 1))
+            y_train_tempo = np.zeros((batch_size, 1))
+            y_train_belongs_to_prev_chord = np.zeros((batch_size, 2))
+
+            for i in range(batch_size):
+                # shift batches in x_train one step to the left
+                x_train = roll_and_add_zeros(x_train)
+                # add new note/duration/offset/volume/tempo
+                x_train[-1] = roll_and_add_zeros(x_train[-2])
+
+                x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
+                x_train[-1][-1][1] = float(self.duration_to_num(music_data[i][1])) / float(len(self.duration_vocab))
+                x_train[-1][-1][2] = float(self.offset_to_num(music_data[i][2])) / float(len(self.offset_vocab))
+                x_train[-1][-1][3] = float(music_data[i][3])
+                x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
+                x_train[-1][-1][5] = float(music_data[i][5])
+
+                if i != batch_size-1:
+                    y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
+                    y_train_duration[i][self.duration_to_num(music_data[i+1][1])] = 1.0
+                    y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
+                    y_train_volume[i][0] = music_data[i+1][3]
+                    y_train_tempo[i][0] = float(music_data[i+1][4]) / float(self.max_tempo)
+                    y_train_belongs_to_prev_chord[i][int(music_data[i+1][5])] = 1.0
+            with open(join(self.dir_path, "temp_converted/" + f_name + ".converted"), "wb") as file:
+                pickle.dump([x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord], file)
+            return True
+        else:
+            return False
         
     ### NOTE
     def make_note_conversion_dictionaries(self):
