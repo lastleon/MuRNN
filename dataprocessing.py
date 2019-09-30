@@ -34,7 +34,7 @@ class DataProcessor:
         
         # files are saved here (not full path, but names + extension only)
         files = []
-
+        """
         complete_filelist = listdir(self.dir_path)
 
         # transpose the pieces
@@ -44,7 +44,7 @@ class DataProcessor:
 
             if not ("-transposed-" in f_name) and (f_extension == ".midi" or f_extension == ".mid"):
                 DataProcessor.transpose_on_octaves(join(self.dir_path, f_name + f_extension), up=0, down=0)
-        
+        """
         complete_filelist = listdir(self.dir_path)
                 
         # if a file is of type mid(i), then its
