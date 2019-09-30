@@ -34,6 +34,16 @@ class DataProcessor:
         
         # files are saved here (not full path, but names + extension only)
         files = []
+
+        complete_filelist = listdir(self.dir_path)
+
+        # transpose the pieces
+        for file in complete_filelist:
+            f_name, f_extension = splitext(file)
+            f_extension = f_extension.lower()
+
+            if not ("-transposed-" in f_name) and (f_extension == ".midi" or f_extension == ".mid"):
+                DataProcessor.transpose_on_octaves(join(self.dir_path, f_name + f_extension), up=0, down=0)
         
         complete_filelist = listdir(self.dir_path)
                 
@@ -41,9 +51,10 @@ class DataProcessor:
         # name is saved in 'files'
         for file in complete_filelist:
             f_name, f_extension = splitext(file)
+            f_extension = f_extension.lower()
 
             if f_extension == ".midi" or f_extension == ".mid":
-                files.append(file)
+                files.append(f_name + f_extension.lower())
 
         # iterate over all of the mid(i) files
         for file in files.copy():
@@ -82,7 +93,7 @@ class DataProcessor:
         #   "D#4,C4,E4 1/3",
         #   ... 
         # ]
-        if isfile(f_path) and (splitext(f_path)[1] == '.midi' or splitext(f_path)[1] == '.mid') and not splitext(f_path)[0].endswith("retrieved"):
+        if isfile(f_path) and (splitext(f_path)[1].lower() == '.midi' or splitext(f_path)[1].lower() == '.mid') and not splitext(f_path)[0].endswith("retrieved"):
             # stream of notes flattened and sorted
             m_stream = music21.converter.parse(f_path).flat.sorted
             notes = []
@@ -295,9 +306,8 @@ class DataProcessor:
                 filename = splitext(file_queue.pop())[0]
                 x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord = DataProcessor.load_temp_converted_file(join(self.dir_path, "temp_converted/" + filename + ".converted"))
                 
-                print(x_train[0])
                 batch_size = len(x_train)
-                print(batch_size)
+
                 if len(file_queue) == 0:
                     file_queue = self.files.copy()
                     self.dataset_iterations += 1
