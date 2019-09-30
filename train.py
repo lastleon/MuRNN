@@ -14,7 +14,7 @@ import random
 import json
 import pickle
 from os import mkdir, system, listdir
-from os.path import exists, join
+from os.path import exists, join, basename, dirname
 from dataprocessing import DataProcessor
 
 import argparse
@@ -127,7 +127,8 @@ class MuRNN:
             variables = {
                 "SEQUENCE_LENGTH" : self.SEQUENCE_LENGTH,
                 "TIMESIGNATURE" : self.TIMESIGNATURE,
-                "EPOCHS_TRAINED" : self.EPOCHS_TRAINED
+                "EPOCHS_TRAINED" : self.EPOCHS_TRAINED,
+                "DATASET_NAME" : basename(dirname(self.dp.dir_path))
             }
             file.write(json.dumps(variables))
         
@@ -308,7 +309,7 @@ if __name__ == '__main__':
     parser.add_argument("-continue_training",
                         type=str,
                         default=None,
-                        help="Continue training the specified model\nWARNING: THE USER IS RESPONSIBLE FOR PROVIDING THE SAME DATASET AS IN THE FIRST TRAINING SESSIONS, OTHERWISE THIS WON'T WORK PROPERLY")
+                        help="Continue training the specified model")
     parser.add_argument("-target_dir",
                         type=str,
                         default="./models/",
