@@ -26,6 +26,10 @@ parser.add_argument("-amount",
                     type=int,
                     default=1,
                     help="Specify how many songs to produce")
+parser.add_argument("-alpha",
+                    type=float,
+                    default=0,
+                    help="Specify how creative the network can get (0: not creative, 1: very creative)")
 
 args = parser.parse_args()
 
@@ -35,4 +39,4 @@ model.load_model(args.model_path, weights_filename=args.weights_filename)
 
 
 for _ in range(args.amount):
-    DataProcessor.retrieve_midi_from_loaded_data(model.make_song(args.song_length), target_dir=args.target_dir if args.target_dir != None else join(args.model_path, "songs/"))
+    DataProcessor.retrieve_midi_from_loaded_data(model.make_song(args.alpha, args.song_length), target_dir=args.target_dir if args.target_dir != None else join(args.model_path, "songs/"))

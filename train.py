@@ -26,6 +26,15 @@ def max(array):
             curr_value = array[i]
     return curr_index, curr_value
 
+def choose_entry(array, alpha):
+    data = []
+    for i in range(len(array)):
+        data.append((array[i], i))
+    
+    data.sort(key=lambda tup: tup[0], reverse=True)
+
+    return data[random.randint(0, np.floor(alpha * (len(data)-1)))][1]
+
 class EpochEndCallback(Callback):
 
     def __init__(self, murrn):
@@ -190,7 +199,7 @@ class MuRNN:
 
         self.compile()
     
-    def make_song(self, length=200):
+    def make_song(self, alpha=0.0, length=200):
         song = []
         sequence = np.ones((1, self.SEQUENCE_LENGTH, 6))
 
@@ -223,14 +232,23 @@ class MuRNN:
         for i in range(length-1):
             note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction, belongs_to_prev_chord_prediction = self.model.predict(sequence)
 
+            """
             note_index = max(note_prediction[0])[0]
             duration_index = max(duration_prediction[0])[0]
             offset_index = max(offset_prediction[0])[0]
+            """
+
+            note_index = choose_entry(note_prediction[0], alpha)
+            duration_index = choose_entry(duration_prediction[0], alpha)
+            offset_index = choose_entry(offset_prediction[0], alpha)
 
             volume_prediction = volume_prediction[0][0]
             tempo_prediction = tempo_prediction[0][0]
-
+            
+            """
             belongs_to_prev_chord_index = max(belongs_to_prev_chord_prediction[0])[0]
+            """
+            belongs_to_prev_chord_index = choose_entry(belongs_to_prev_chord_prediction[0], alpha)
             
             song.append((self.dp.num_to_note(note_index),
                          self.dp.num_to_duration(duration_index),
