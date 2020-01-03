@@ -257,7 +257,7 @@ class MuRNN:
                   "volume_output" : "mse",
                   "tempo_output" : "mse",
                   "belongs_to_prev_chord_output" : "binary_crossentropy"},
-            loss_weights=self.get_lossweights(),
+            #loss_weights=self.get_lossweights(),
             optimizer=opt,
             metrics=["accuracy"])
     
