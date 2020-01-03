@@ -121,7 +121,7 @@ class DataProcessor:
             with open(splitext(f_path)[0] + ".mu", "wb") as f:
                 pickle.dump(notes, f)
             return True
-        return False
+        return False 
 
     def train_generator_no_padding(self, sequence_length=50, LIMIT=default_limit):
 
