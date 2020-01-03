@@ -198,10 +198,7 @@ class DataProcessor:
 
             else:
                 x_train, y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord = remainder.pop()
-            
-            
-            self.next_batch_is_new_song = len(remainder) == 0
-            
+                        
             yield [x_train], [y_train_notes, y_train_duration, y_train_offset, y_train_volume, y_train_tempo, y_train_belongs_to_prev_chord]
 
     # STRUCTURE OF THE LOADED FILE
@@ -328,7 +325,7 @@ class DataProcessor:
             for i in range(batch_size):
                 # shift batches in x_train one step to the left
                 x_train = roll_and_add_zeros(x_train)
-                # add new note/duration/offset/volume/tempo
+                # add new note/duration/offset/volume/tempo/belongs_to_prev_chord
                 x_train[-1] = roll_and_add_zeros(x_train[-2])
 
                 x_train[-1][-1][0] = float(self.note_to_num(music_data[i][0])) / float(len(self.note_vocab))
@@ -338,7 +335,7 @@ class DataProcessor:
                 x_train[-1][-1][4] = float(music_data[i][4]) / float(self.max_tempo)
                 x_train[-1][-1][5] = float(music_data[i][5])
 
-                if i != batch_size-1:
+                if i != batch_size-1: 
                     y_train_notes[i][self.note_to_num(music_data[i+1][0])] = 1.0
                     y_train_duration[i][self.duration_to_num(music_data[i+1][1])] = 1.0
                     y_train_offset[i][self.offset_to_num(music_data[i+1][2])] = 1.0
@@ -425,29 +422,4 @@ class DataProcessor:
             return round(float(((Decimal(value.split("/")[0]) / Decimal(value.split("/")[1])) * DataProcessor.twelve)))
         else:
             return round(float(Decimal(value) * DataProcessor.twelve))
-    
-    @staticmethod
-    def transpose_on_octaves(file_path, up=1, down=1):
-        if up < 0:
-            up = 0
-        if down < 0:
-            down = 0
-
-        stream = music21.converter.parse(file_path).flat.sorted
-        
-        split_path = splitext(file_path)
-
-        for i in range(-down, up+1):
-            if i < 0:
-                interval = "P" + str(-1 + 7*i)
-            elif i > 0:
-                interval = "P" + str(1 + 7*i)
-            else:
-                continue
-
-            fp = split_path[0] + "-transposed-" + interval + split_path[1]
-            if not exists(fp):
-                up_transpose = stream.transpose(interval)
-                up_transpose.write("midi", fp=fp)
-                print("Saved transposed piece under filepath '" + fp + "'...")
     

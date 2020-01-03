@@ -1,11 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
 from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout, Bidirectional, LeakyReLU, TimeDistributed
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, LambdaCallback, Callback
-
-from tensorboard import default
-from tensorboard import program
-import logging
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, Callback
 
 import datetime
 import numpy as np
@@ -19,7 +15,6 @@ from dataprocessing import DataProcessor
 
 import argparse
 
-from distutils.dir_util import copy_tree
 from utils import mkdir_safely, get_datetime_str
 
 def max(array):
@@ -78,13 +73,14 @@ class MuRNN:
         mkdir_safely(self.model_path)
         mkdir_safely(join(self.model_path, "songs/"))
         
+        # make new dataprocessor
         self.dp = DataProcessor(self.data_path)
         
         # make model
         data_input = Input(batch_shape=(None, None, 6), name="input")
 
         x = TimeDistributed(Dense(10))(data_input)
-        x = LeakyReLU(alpha=0.2)(x)
+        x = LeakyReLU(alpha=0.3)(x)
 
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
@@ -135,7 +131,7 @@ class MuRNN:
         with open(join(self.model_path, "dataprocessor.pkl"), "wb") as file:
             pickle.dump(self.dp, file)
 
-        # training
+        #### training
         callbacks = []
 
         # Tensorboard
@@ -149,6 +145,7 @@ class MuRNN:
             # ModelCheckpoint
             callbacks.append(ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True))
         
+        # actual training takes place here
         self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, limit), 
                                 steps_per_epoch=steps_per_epoch, 
                                 epochs=self.EPOCHS_TRAINED + epochs,
@@ -158,14 +155,16 @@ class MuRNN:
         
         self.model.save_weights(self.model_path + "weights.hdf5")
 
-
+    # load already trained model
     def load_model(self, model_dir_path, weights_filename="weights.hdf5"):
 
         self.model_path = model_dir_path
 
+        # load model information
         with open(join(self.model_path, "model.json"), "r") as model_json:
             self.model = model_from_json(model_json.read())
 
+        # load saved variables
         with open(join(self.model_path, "variables.json"), "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
@@ -182,9 +181,10 @@ class MuRNN:
                 # for backwards-compatibility
                 self.EPOCHS_TRAINED = 0
             
-            
+        # load the dataprocessor
         with open(join(self.model_path, "dataprocessor.pkl"), "rb") as file:
                 self.dp = pickle.load(file)
+
 
         self.model.load_weights(join(self.model_path, weights_filename))
 
@@ -194,6 +194,7 @@ class MuRNN:
         song = []
         sequence = np.ones((1, self.SEQUENCE_LENGTH, 6))
 
+        # start off with one randomly generated note
         random_note = random.randrange(0, len(self.dp.note_vocab))
         sequence[0][-1][0] =  float(random_note) / float(len(self.dp.note_vocab))
 
@@ -218,6 +219,7 @@ class MuRNN:
                      random_tempo,
                      0.0))
 
+        # then continuously predict the next note
         for i in range(length-1):
             note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction, belongs_to_prev_chord_prediction = self.model.predict(sequence)
 
@@ -262,7 +264,6 @@ class MuRNN:
             metrics=["accuracy"])
     
     def get_lossweights(self, smoothing=0.4):
-
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
                         len(self.dp.offset_vocab),
@@ -283,6 +284,7 @@ class MuRNN:
             output_weights.append(smoothing * (a - 1) + 1)
 
         return dict(zip(output_names, output_weights))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
@@ -328,9 +330,3 @@ if __name__ == '__main__':
         model.new_model(args.dir, sequence_length=args.seq_len, target_dir=args.target_dir)
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, limit=args.limit)
-
-"""
-    TEMP DISCLAIMER:
-    The music dataset was downloaded from http://www.piano-midi.de/ and is licensed under
-    the cc-by-sa Germany License (https://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
-"""

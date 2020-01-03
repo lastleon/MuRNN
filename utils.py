@@ -3,6 +3,8 @@ from os.path import exists
 import datetime
 import numpy as np
 
+# just some helper functions
+
 def mkdir_safely(path):
     if not exists(path):
         mkdir(path)

@@ -3,6 +3,8 @@ from train import MuRNN
 import argparse
 from os.path import join
 
+# make songs by running this file
+
 parser = argparse.ArgumentParser(prog="MuRNN")
 
 parser.add_argument("model_path",
