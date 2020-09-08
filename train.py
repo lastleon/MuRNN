@@ -1,11 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model, model_from_json
 from tensorflow.keras.layers import Input, Dense, CuDNNLSTM, Dropout, Bidirectional, LeakyReLU, TimeDistributed
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, LambdaCallback, Callback
-
-from tensorboard import default
-from tensorboard import program
-import logging
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping, Callback
 
 import datetime
 import numpy as np
@@ -14,12 +10,11 @@ import random
 import json
 import pickle
 from os import mkdir, system, listdir
-from os.path import exists, join
+from os.path import exists, join, basename, dirname
 from dataprocessing import DataProcessor
 
 import argparse
 
-from distutils.dir_util import copy_tree
 from utils import mkdir_safely, get_datetime_str
 
 def max(array):
@@ -30,6 +25,15 @@ def max(array):
             curr_index = i
             curr_value = array[i]
     return curr_index, curr_value
+
+def choose_entry(array, alpha):
+    data = []
+    for i in range(len(array)):
+        data.append((array[i], i))
+    
+    data.sort(key=lambda tup: tup[0], reverse=True)
+
+    return data[random.randint(0, np.floor(alpha * (len(data)-1)))][1]
 
 class EpochEndCallback(Callback):
 
@@ -78,13 +82,14 @@ class MuRNN:
         mkdir_safely(self.model_path)
         mkdir_safely(join(self.model_path, "songs/"))
         
+        # make new dataprocessor
         self.dp = DataProcessor(self.data_path)
         
         # make model
-        data_input = Input(batch_shape=(None, None, 5), name="input")
+        data_input = Input(batch_shape=(None, None, 6), name="input")
 
         x = TimeDistributed(Dense(10))(data_input)
-        x = LeakyReLU(alpha=0.2)
+        x = LeakyReLU(alpha=0.3)(x)
 
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
         x = Bidirectional(CuDNNLSTM(256, return_sequences=True))(x)
@@ -113,7 +118,10 @@ class MuRNN:
         # tempos
         tempo_picker = Dense(1, activation="sigmoid", name="tempo_output")(x)
 
-        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker])
+        # belongs to prev chord
+        prev_chord_picker = Dense(2, activation="softmax", name="belongs_to_prev_chord_output")(x)
+
+        self.model = Model(inputs=[data_input], outputs=[note_picker, duration_picker, offset_picker, volume_picker, tempo_picker, prev_chord_picker])
         self.compile()
 
     def train(self, steps_per_epoch, epochs, save_every_epoch=False, limit=DataProcessor.default_limit):
@@ -124,14 +132,15 @@ class MuRNN:
             variables = {
                 "SEQUENCE_LENGTH" : self.SEQUENCE_LENGTH,
                 "TIMESIGNATURE" : self.TIMESIGNATURE,
-                "EPOCHS_TRAINED" : self.EPOCHS_TRAINED
+                "EPOCHS_TRAINED" : self.EPOCHS_TRAINED,
+                "DATASET_NAME" : basename(dirname(self.dp.dir_path))
             }
             file.write(json.dumps(variables))
         
         with open(join(self.model_path, "dataprocessor.pkl"), "wb") as file:
             pickle.dump(self.dp, file)
 
-        # training
+        #### training
         callbacks = []
 
         # Tensorboard
@@ -145,6 +154,7 @@ class MuRNN:
             # ModelCheckpoint
             callbacks.append(ModelCheckpoint(self.model_path + "weights-{epoch:04d}.hdf5", save_weights_only=True))
         
+        # actual training takes place here
         self.model.fit_generator(self.dp.train_generator_with_padding(self.SEQUENCE_LENGTH, limit), 
                                 steps_per_epoch=steps_per_epoch, 
                                 epochs=self.EPOCHS_TRAINED + epochs,
@@ -154,14 +164,16 @@ class MuRNN:
         
         self.model.save_weights(self.model_path + "weights.hdf5")
 
-
+    # load already trained model
     def load_model(self, model_dir_path, weights_filename="weights.hdf5"):
 
         self.model_path = model_dir_path
 
+        # load model information
         with open(join(self.model_path, "model.json"), "r") as model_json:
             self.model = model_from_json(model_json.read())
 
+        # load saved variables
         with open(join(self.model_path, "variables.json"), "r") as variable_json:
             variables = json.load(variable_json)
             self.SEQUENCE_LENGTH = int(variables["SEQUENCE_LENGTH"])
@@ -178,18 +190,20 @@ class MuRNN:
                 # for backwards-compatibility
                 self.EPOCHS_TRAINED = 0
             
-            
+        # load the dataprocessor
         with open(join(self.model_path, "dataprocessor.pkl"), "rb") as file:
                 self.dp = pickle.load(file)
+
 
         self.model.load_weights(join(self.model_path, weights_filename))
 
         self.compile()
     
-    def make_song(self, length=200):
+    def make_song(self, alpha=0.0, length=200):
         song = []
-        sequence = np.ones((1, self.SEQUENCE_LENGTH, 5))
+        sequence = np.ones((1, self.SEQUENCE_LENGTH, 6))
 
+        # start off with one randomly generated note
         random_note = random.randrange(0, len(self.dp.note_vocab))
         sequence[0][-1][0] =  float(random_note) / float(len(self.dp.note_vocab))
 
@@ -205,27 +219,43 @@ class MuRNN:
         random_tempo = random.random()
         sequence[0][-1][4] = random_tempo
 
+        sequence[0][-1][5] = 0.0
+
         song.append((self.dp.num_to_note(random_note),
                      self.dp.num_to_duration(random_duration),
                      self.dp.num_to_offset(random_offset),
                      random_volume,
-                     random_tempo))
+                     random_tempo,
+                     0.0))
 
+        # then continuously predict the next note
         for i in range(length-1):
-            note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction = self.model.predict(sequence)
+            note_prediction, duration_prediction, offset_prediction, volume_prediction, tempo_prediction, belongs_to_prev_chord_prediction = self.model.predict(sequence)
 
+            """
             note_index = max(note_prediction[0])[0]
             duration_index = max(duration_prediction[0])[0]
             offset_index = max(offset_prediction[0])[0]
+            """
+
+            note_index = choose_entry(note_prediction[0], alpha)
+            duration_index = choose_entry(duration_prediction[0], alpha)
+            offset_index = choose_entry(offset_prediction[0], alpha)
 
             volume_prediction = volume_prediction[0][0]
             tempo_prediction = tempo_prediction[0][0]
+            
+            """
+            belongs_to_prev_chord_index = max(belongs_to_prev_chord_prediction[0])[0]
+            """
+            belongs_to_prev_chord_index = choose_entry(belongs_to_prev_chord_prediction[0], alpha)
             
             song.append((self.dp.num_to_note(note_index),
                          self.dp.num_to_duration(duration_index),
                          self.dp.num_to_offset(offset_index),
                          volume_prediction,
-                         tempo_prediction))
+                         tempo_prediction,
+                         float(belongs_to_prev_chord_index)))
 
             sequence = np.roll(sequence, -sequence.shape[2])
 
@@ -234,6 +264,7 @@ class MuRNN:
             sequence[0][-1][2] = offset_index / len(self.dp.offset_vocab)
             sequence[0][-1][3] = volume_prediction
             sequence[0][-1][4] = tempo_prediction
+            sequence[0][-1][5] = float(belongs_to_prev_chord_index)
 
         return song
         
@@ -244,23 +275,24 @@ class MuRNN:
                   "duration_output" : "categorical_crossentropy",
                   "offset_output" : "categorical_crossentropy",
                   "volume_output" : "mse",
-                  "tempo_output" : "mse"},
+                  "tempo_output" : "mse",
+                  "belongs_to_prev_chord_output" : "binary_crossentropy"},
             loss_weights=self.get_lossweights(),
             optimizer=opt,
             metrics=["accuracy"])
     
     def get_lossweights(self, smoothing=0.4):
-
         output_sizes = [len(self.dp.note_vocab),
                         len(self.dp.duration_vocab),
                         len(self.dp.offset_vocab),
                         1,
-                        1]
+                        1,
+                        2]
         
         ## Hyperparameter
-        weights = [0.6, 0.1, 0.1, 0.1, 0.1]
+        weights = [0.5, 0.1, 0.1, 0.1, 0.1, 0.1]
 
-        output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output"]
+        output_names = ["note_output", "duration_output", "offset_output", "volume_output", "tempo_output", "belongs_to_prev_chord_output"]
 
         output_weights = []
 
@@ -270,6 +302,7 @@ class MuRNN:
             output_weights.append(smoothing * (a - 1) + 1)
 
         return dict(zip(output_names, output_weights))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="MuRNN")
@@ -296,7 +329,7 @@ if __name__ == '__main__':
     parser.add_argument("-continue_training",
                         type=str,
                         default=None,
-                        help="Continue training the specified model\nWARNING: THE USER IS RESPONSIBLE FOR PROVIDING THE SAME DATASET AS IN THE FIRST TRAINING SESSIONS, OTHERWISE THIS WON'T WORK PROPERLY")
+                        help="Continue training the specified model")
     parser.add_argument("-target_dir",
                         type=str,
                         default="./models/",
@@ -315,9 +348,3 @@ if __name__ == '__main__':
         model.new_model(args.dir, sequence_length=args.seq_len, target_dir=args.target_dir)
         
     model.train(args.steps_per_epoch, args.epochs, save_every_epoch=args.steps_per_epoch, limit=args.limit)
-
-"""
-    TEMP DISCLAIMER:
-    The music dataset was downloaded from http://www.piano-midi.de/ and is licensed under
-    the cc-by-sa Germany License (https://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
-"""
