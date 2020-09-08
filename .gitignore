@@ -1,5 +1,7 @@
 /__pycache__
 /.vs
+/.vscode
 *.txt
 /models
-/test.py
+test.py
+.gitignore
