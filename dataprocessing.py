@@ -4,7 +4,7 @@ import numpy as np
 import random # may not be random enough
 from decimal import Decimal
 
-from os.path import isdir, isfile, join, splitext, exists
+from os.path import isdir, isfile, join, splitext, exists, abspath
 from os import listdir
 import pickle
 import glob
@@ -374,12 +374,42 @@ class DataProcessor:
 
             stream.insert(curr_offset, note, ignoreSort=True)
 
-            if filename != None:
-                file_path = join(target_dir, filename + ".mid")
-            else:
-                file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
+        if filename != None:
+            file_path = join(target_dir, filename + ".mid")
+        else:
+            file_path = join(target_dir, "song-" + get_datetime_str() +".mid")
         stream.write('midi', fp=file_path)
         print("File saved at '" + file_path + "'...")
+        return file_path
+
+    @staticmethod
+    def loaded_data_to_stream(data):
+        stream = music21.stream.Stream()
+        curr_offset = 0.0
+        for tup in data:
+            pitch, duration, offset, volume, tempo, belongs_to_prev_chord = tup
+            
+            # transform the values back into their original forms
+            duration = DataProcessor.int_representation_to_quarterLength(float(duration))
+            offset = DataProcessor.int_representation_to_quarterLength(float(offset))
+
+            curr_offset += offset
+
+            # add the values to the stream
+            if "," in pitch:
+                note = music21.chord.Chord(pitch.split(","))
+            else:
+                note = music21.note.Note(pitch)
+            note.duration = music21.duration.Duration(duration)
+            note.volume.velocityScalar = volume
+
+            if len(stream) > 0:
+                metronome_before = stream.flat.notes[-1].getContextByClass("MetronomeMark")
+                if metronome_before != None and metronome_before.number != tempo:
+                    stream.insert(curr_offset, music21.tempo.MetronomeMark(number=tempo))
+
+            stream.insert(curr_offset, note, ignoreSort=True)
+        return stream
 
     @staticmethod
     def load_temp_converted_file(f_path):
